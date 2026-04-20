@@ -13,6 +13,7 @@ from html import escape
 
 from .dictionaries.base import Dictionary, LookupKey, rank_candidates
 from .frequency import zipf
+from .lemma_frequency import lemma_zipf
 from .lemmatize import lemmatize
 from .render import AnnotationFormat, render_translations
 from .tokenize import (
@@ -111,13 +112,13 @@ class Annotator:
         """Run the rare-word filter cascade and return ranked translations.
 
         Cascade (short-circuiting, cheapest first): length → numeric →
-        proper noun → surface-form frequency → lemma frequency →
-        dictionary hit. Checking the surface form before the lemma guards
-        against lemmatizer false positives where a very common inflected
-        form (e.g. French "étais", "rues", "sommes") gets mapped to a rare
-        noun homograph (``étai``, ``ruer``, ``somme``); without this gate
-        the pipeline would gleefully wrap every "j'étais" with
-        "Stützbalken".
+        proper noun → surface-form frequency → lemma-aggregated frequency →
+        dictionary hit. The surface-form gate catches very common inflected
+        forms regardless of how the lemmatizer resolves them; the
+        lemma-aggregate gate uses precomputed sums over every inflection of
+        a lemma (via :func:`lemma_zipf`) so that e.g. "manger" with
+        aggregate Zipf ~5.3 is recognized as common even though its
+        infinitive form alone only scores ~5.0.
 
         Returns:
             The ranked translation list to render, or ``None`` if the token
@@ -134,7 +135,7 @@ class Annotator:
         if zipf(surface, self._cfg.source_lang) >= self._cfg.cutoff:
             return None
         lemma = lemmatize(surface, self._cfg.source_lang)
-        if zipf(lemma, self._cfg.source_lang) >= self._cfg.cutoff:
+        if lemma_zipf(lemma, self._cfg.source_lang) >= self._cfg.cutoff:
             return None
         key = LookupKey(
             lemma=lemma,
