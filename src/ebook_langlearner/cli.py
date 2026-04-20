@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import click
 
 from .annotate import AnnotationConfig, Annotator
+from .cefr import CEFR_LEVELS, cefr_cutoff
 from .dictionaries import (
     CompositeDictionary,
     DictCCDictionary,
@@ -45,10 +46,21 @@ def cmd_languages() -> None:
 
 
 @main.command("build-wiktionary-index")
-@click.option("--source", "-s", required=True, help="Source language code (e.g. fr).")
+@click.option(
+    "--source",
+    "-s",
+    required=True,
+    help="Source language code (e.g. fr). Run 'languages' to list supported codes. Run 'languages' to list supported codes.",
+)
 @click.argument("jsonl", type=click.Path(exists=True, path_type=Path))
 def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
-    """Build a SQLite index from a Kaikki.org JSONL dump for the given source language."""
+    """Build a SQLite index from a Kaikki.org JSONL dump for the given source language.
+
+    Download the language's "Sense-disambiguated translations" JSONL from
+    https://kaikki.org/dictionary/ and pass the file path as JSONL. The
+    resulting index is cached under the user's data directory and picked up
+    automatically by 'annotate' when no --dictcc backend matches.
+    """
     source = require_supported(source)
     out = build_index(source, jsonl)
     click.echo(f"Built index: {out}")
@@ -56,14 +68,33 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
 
 @main.command("annotate")
 @click.argument("input_epub", type=click.Path(exists=True, path_type=Path))
-@click.option("--from", "source", required=True, help="Source language code (e.g. fr).")
-@click.option("--to", "target", required=True, help="Target language code (e.g. en).")
+@click.option(
+    "--from",
+    "source",
+    required=True,
+    help="Source language code (e.g. fr). Run 'languages' to list supported codes.",
+)
+@click.option(
+    "--to",
+    "target",
+    required=True,
+    help="Target language code (e.g. de). Run 'languages' to list supported codes.",
+)
 @click.option(
     "--cutoff",
     type=float,
-    default=3.0,
-    show_default=True,
-    help="Zipf-frequency cutoff: words below this are annotated.",
+    default=None,
+    help=(
+        "Zipf-frequency cutoff: words below this are annotated. "
+        "Mutually exclusive with --level; defaults to 3.0 if neither is given."
+    ),
+)
+@click.option(
+    "--level",
+    type=click.Choice(CEFR_LEVELS, case_sensitive=False),
+    default=None,
+    help="CEFR level of the reader; derives a per-language cutoff. "
+    "Mutually exclusive with --cutoff.",
 )
 @click.option(
     "--format",
@@ -89,7 +120,8 @@ def cmd_annotate(
     input_epub: Path,
     source: str,
     target: str,
-    cutoff: float,
+    cutoff: float | None,
+    level: str | None,
     fmt: str,
     dictcc_paths: tuple[Path, ...],
     output: Path | None,
@@ -105,6 +137,13 @@ def cmd_annotate(
     target = require_supported(target)
     if source == target:
         raise click.BadParameter("--from and --to must differ")
+    if cutoff is not None and level is not None:
+        raise click.BadParameter("--cutoff and --level are mutually exclusive")
+    if level is not None:
+        cutoff = cefr_cutoff(source, level)
+        click.echo(f"CEFR {level.upper()} → Zipf cutoff {cutoff:.2f} for {source!r}")
+    elif cutoff is None:
+        cutoff = 3.0
 
     output = output or input_epub.with_suffix(".annotated.epub")
 

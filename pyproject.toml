@@ -3,6 +3,8 @@ name = "ebook-langlearner"
 version = "0.1.0"
 description = "Annotate rare words in EPUB files with translations for language learners"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12",
@@ -93,6 +95,8 @@ ignore = [
 "tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN201", "ANN202", "PLR2004", "SLF001"]
 # The package dunder init re-exports; docstring coverage is at module level.
 "**/__init__.py" = ["D104"]
+# Build scripts are entry points; stdout progress is the intended output.
+"scripts/**" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

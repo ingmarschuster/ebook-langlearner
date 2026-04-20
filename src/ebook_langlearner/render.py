@@ -53,8 +53,17 @@ def render_translations(word: str, translations: list[str], fmt: AnnotationForma
 
 
 RUBY_CSS = """
+body { line-height: 1.7; }
 ruby.ell-annot { ruby-align: center; }
-ruby.ell-annot rt.ell-rt { font-size: 0.55em; opacity: 0.75; }
+ruby.ell-annot rt.ell-rt { font-size: 0.55em; opacity: 0.75; line-height: 1; }
 span.ell-annot { }
 """.strip()
-"""CSS injected into annotated EPUBs to size and style the ruby annotations."""
+"""CSS injected into annotated EPUBs to size and style the ruby annotations.
+
+The ``body { line-height: 1.7 }`` reserves vertical room for every line so the
+rt annotation can sit above without expanding any line-box. The
+``rt { line-height: 1 }`` prevents the rt's own line-height from contributing
+to its parent's line-box height — without it, readers like Calibre
+(QtWebEngine) and Kindle KF8 promote the whole paragraph's line-box to fit
+the rt, which visibly spreads *ruby-less* neighbouring lines apart.
+"""
