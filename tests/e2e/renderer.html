@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ebook-langlearner renderer</title>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; }
+      #viewer { width: 100vw; height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <div id="viewer"></div>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const epubUrl = params.get("epub");
+      const book = ePub(epubUrl, { openAs: "epub" });
+      const rendition = book.renderTo("viewer", {
+        width: "100%",
+        height: "100%",
+        flow: "scrolled-doc",
+      });
+      window.__renderer = { book, rendition, ready: false, rubyCount: 0, firstRuby: null, visited: 0 };
+
+      function inspectCurrentIframe() {
+        const iframe = document.querySelector("#viewer iframe");
+        if (!iframe || !iframe.contentDocument) return 0;
+        const doc = iframe.contentDocument;
+        const rubies = doc.querySelectorAll("ruby.ell-annot");
+        if (rubies.length && !window.__renderer.firstRuby) {
+          const node = rubies[0];
+          const rt = node.querySelector("rt");
+          window.__renderer.firstRuby = {
+            base: node.firstChild ? node.firstChild.textContent : "",
+            rt: rt ? rt.textContent : "",
+          };
+        }
+        return rubies.length;
+      }
+
+      book.ready
+        .then(async () => {
+          const spine = book.spine.spineItems;
+          for (const item of spine) {
+            await rendition.display(item.href);
+            // Give epub.js a tick to mount the iframe DOM.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            window.__renderer.rubyCount += inspectCurrentIframe();
+            window.__renderer.visited += 1;
+            if (window.__renderer.rubyCount > 0 && window.__renderer.firstRuby) {
+              break;
+            }
+          }
+          window.__renderer.ready = true;
+        })
+        .catch((err) => {
+          window.__renderer.error = String(err);
+          window.__renderer.ready = true;
+        });
+    </script>
+  </body>
+</html>
