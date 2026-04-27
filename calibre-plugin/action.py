@@ -159,24 +159,40 @@ def _annotate_job(
     Calibre's :class:`ThreadedJob` machinery; this pipeline doesn't surface
     progress, so they are accepted but unused.
     """
-    del log, abort, notifications
+    del abort
     _setup_vendor_path()
 
     from calibre_plugins.ell.ell.annotate import AnnotationConfig, Annotator
     from calibre_plugins.ell.ell.cefr import cefr_cutoff
-    from calibre_plugins.ell.ell.dictionaries import DictCCDictionary
+    from calibre_plugins.ell.ell.dictionaries import (
+        DictCCDictionary,
+        WiktionaryDictionary,
+    )
+    from calibre_plugins.ell.ell.dictionaries.download import ensure_wiktionary_index
     from calibre_plugins.ell.ell.epub_pipeline import annotate_epub
     from calibre_plugins.ell.ell.render import AnnotationFormat
 
-    cutoff = cefr_cutoff(config["source"], config["level"])
-    dictionary = DictCCDictionary.from_file(
-        Path(config["dictcc_path"]), config["source"], config["target"]
-    )
+    source = config["source"]
+    target = config["target"]
+    cutoff = cefr_cutoff(source, config["level"])
+
+    dictcc_path = config.get("dictcc_path") or ""
+    if dictcc_path:
+        dictionary = DictCCDictionary.from_file(Path(dictcc_path), source, target)
+    else:
+        log(f"No dict.cc provided — ensuring Wiktionary index for {source!r}")
+
+        def _on_progress(stage: str, current: int, total: int | None) -> None:
+            _report_download_progress(notifications, log, stage, current, total)
+
+        ensure_wiktionary_index(source, progress=_on_progress)
+        dictionary = WiktionaryDictionary(source)
+
     annotator = Annotator(
         dictionary,
         AnnotationConfig(
-            source_lang=config["source"],
-            target_lang=config["target"],
+            source_lang=source,
+            target_lang=target,
             cutoff=cutoff,
             fmt=AnnotationFormat(config["format"]),
             ruby_font_pct=float(config["ruby_font_pct"]),
@@ -185,3 +201,33 @@ def _annotate_job(
     output_path = input_epub.with_suffix(f".{config['level']}.annotated.epub")
     annotate_epub(input_epub, output_path, annotator)
     return output_path
+
+
+def _report_download_progress(
+    notifications: Any,
+    log: Any,
+    stage: str,
+    current: int,
+    total: int | None,
+) -> None:
+    """Forward Kaikki download progress to Calibre's job UI.
+
+    ``notifications`` is a queue-like callable that takes
+    ``(percent, message)``. We report integer percent during downloading
+    and a static "indexing" line during the SQLite build (which has no
+    natural percent — Calibre will animate the progress bar instead).
+    """
+    if stage == "indexing":
+        notifications((1.0, "Indexing Wiktionary dump…"))
+        log("Indexing Wiktionary dump into SQLite…")
+        return
+    if total:
+        fraction = current / total
+        notifications(
+            (
+                fraction,
+                f"Downloading Wiktionary: {current / 1_048_576:.0f} / {total / 1_048_576:.0f} MiB",
+            )
+        )
+    else:
+        notifications((0.0, f"Downloading Wiktionary: {current / 1_048_576:.0f} MiB"))

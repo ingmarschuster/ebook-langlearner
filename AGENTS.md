@@ -65,3 +65,7 @@ Commit `pyproject.toml` and `uv.lock`.
 ## Supported languages
 
 The core set is defined in `src/ebook_langlearner/languages.py`. Adding a language means adding it there, verifying wordfreq and simplemma both support it, and adding a fixture-level test.
+
+## Two surfaces, one feature set
+
+The project ships two user surfaces — the `ebook-langlearner` CLI under `src/` and the Calibre plugin under `calibre-plugin/` — and they must stay in lockstep. **Any user-facing capability added to one must be added to the other in the same change.** That means: every new CLI option gets a matching dialog control, every new dialog control gets a matching CLI option, and every behavioral change (auto-download, defaults, error handling, …) lands on both sides before the change is considered done. If parity is genuinely impossible for a particular feature, document why in the PR description.

@@ -65,6 +65,9 @@ class AnnotationDialog(QDialog):
         self.fmt.addItem("Parenthetical (inline)", "parenthetical")
 
         self.dictcc = QLineEdit()
+        self.dictcc.setPlaceholderText(
+            "Optional — leave blank to auto-download the Wiktionary index."
+        )
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._pick_dictcc)
         dictcc_row = QHBoxLayout()
@@ -87,7 +90,7 @@ class AnnotationDialog(QDialog):
         form.addRow("To:", self.target)
         form.addRow("CEFR level:", self.level)
         form.addRow("Format:", self.fmt)
-        form.addRow("dict.cc TSV:", dictcc_container)
+        form.addRow("dict.cc TSV (optional):", dictcc_container)
         form.addRow("Ruby font size:", self.ruby_font_pct)
         layout.addLayout(form)
 

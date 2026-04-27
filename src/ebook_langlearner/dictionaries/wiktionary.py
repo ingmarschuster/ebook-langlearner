@@ -44,8 +44,17 @@ def cache_dir() -> Path:
     return path
 
 
-def _index_path(source_lang: str) -> Path:
-    """Default on-disk location for a source-language SQLite index."""
+def index_path_for(source_lang: str) -> Path:
+    """Return the default on-disk location for a source-language SQLite index.
+
+    Args:
+        source_lang: ISO 639-1 source-language code.
+
+    Returns:
+        ``<cache_dir>/wiktionary-<lang>.sqlite``. The file is not guaranteed to
+        exist; callers can check with :meth:`Path.exists` or
+        :func:`download.ensure_wiktionary_index` to download + build it.
+    """
     return cache_dir() / f"wiktionary-{source_lang}.sqlite"
 
 
@@ -84,7 +93,7 @@ def build_index(
     """
     jsonl_path = Path(jsonl_path)
     if index_path is None:
-        index_path = _index_path(source_lang)
+        index_path = index_path_for(source_lang)
     if index_path.exists():
         index_path.unlink()
 
@@ -144,20 +153,20 @@ class WiktionaryDictionary(Dictionary):
                 cache location.
         """
         self._source_lang = source_lang.lower()
-        self._index_path = index_path or _index_path(source_lang)
+        self.index_path_for = index_path or index_path_for(source_lang)
         self._conn: sqlite3.Connection | None = None
 
     @property
     def is_available(self) -> bool:
         """Whether the backing SQLite index exists on disk."""
-        return self._index_path.exists()
+        return self.index_path_for.exists()
 
     def _connection(self) -> sqlite3.Connection | None:
         """Open the SQLite connection lazily, or return None if unavailable."""
         if not self.is_available:
             return None
         if self._conn is None:
-            self._conn = sqlite3.connect(self._index_path)
+            self._conn = sqlite3.connect(self.index_path_for)
         return self._conn
 
     def candidates(self, key: LookupKey) -> list[str]:

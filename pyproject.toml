@@ -88,11 +88,12 @@ ignore = [
     "EM101",   # string literal in raise is acceptable for user-facing errors
     "EM102",   # f-string literal in raise is acceptable
     "S101",    # `assert` is allowed; actual assert misuse is flagged by B011
+    "S310",    # urlopen audit — we validate scheme at the call site (download.py)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests use assert liberally, import fixtures, and don't need full docstrings.
-"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN201", "ANN202", "PLR2004", "SLF001"]
+"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN201", "ANN202", "N802", "PLR2004", "SLF001"]
 # The package dunder init re-exports; docstring coverage is at module level.
 "**/__init__.py" = ["D104"]
 # Build scripts are entry points; stdout progress is the intended output.

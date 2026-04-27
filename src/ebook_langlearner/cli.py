@@ -24,7 +24,12 @@ from .dictionaries import (
     DictCCDictionary,
     WiktionaryDictionary,
 )
-from .dictionaries.wiktionary import build_index
+from .dictionaries.download import (
+    KAIKKI_LANGUAGE_NAMES,
+    KaikkiDownloadError,
+    ensure_wiktionary_index,
+)
+from .dictionaries.wiktionary import build_index, index_path_for
 from .epub_pipeline import annotate_epub
 from .languages import CORE_LANGUAGES, require_supported
 from .render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat
@@ -111,6 +116,17 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
     help="Path to a dict.cc tab-separated export. Can be passed multiple times.",
 )
 @click.option(
+    "--no-download",
+    "no_download",
+    is_flag=True,
+    default=False,
+    help=(
+        "Do not auto-download a Wiktionary dump if no dict.cc is provided. "
+        "Without this flag, the source-language Kaikki JSONL is fetched and "
+        "indexed on first use (large, one-time download)."
+    ),
+)
+@click.option(
     "--ruby-font-pct",
     type=click.FloatRange(min=50.0, max=120.0),
     default=DEFAULT_RUBY_FONT_PCT,
@@ -134,6 +150,8 @@ def cmd_annotate(
     level: str | None,
     fmt: str,
     dictcc_paths: tuple[Path, ...],
+    *,
+    no_download: bool,
     ruby_font_pct: float,
     output: Path | None,
 ) -> None:
@@ -162,14 +180,22 @@ def cmd_annotate(
         DictCCDictionary.from_file(path, source, target) for path in dictcc_paths
     ]
 
+    if not backends and not no_download and source in KAIKKI_LANGUAGE_NAMES:
+        try:
+            ensure_wiktionary_index(source, progress=_cli_download_progress)
+        except KaikkiDownloadError as exc:
+            click.echo(f"Wiktionary auto-download failed: {exc}", err=True)
+            sys.exit(2)
+
     wikt = WiktionaryDictionary(source)
     if wikt.is_available:
         backends.append(wikt)
 
     if not backends:
         click.echo(
-            "No dictionary backend available. Either provide --dictcc FILE or run "
-            f"'build-wiktionary-index --source {source} path/to/kaikki.jsonl'.",
+            "No dictionary backend available. Either provide --dictcc FILE, drop "
+            "--no-download to fetch the Kaikki Wiktionary index automatically, or "
+            f"run 'build-wiktionary-index --source {source} path/to/kaikki.jsonl'.",
             err=True,
         )
         sys.exit(2)
@@ -191,6 +217,77 @@ def cmd_annotate(
         f"Annotated {stats.text_nodes_processed} text nodes across "
         f"{stats.documents_processed} documents → {output}"
     )
+
+
+@main.command("fetch-wiktionary")
+@click.option(
+    "--source",
+    "-s",
+    required=True,
+    help="Source language code (e.g. fr). Run 'languages' to list supported codes.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Re-download and rebuild even if an index already exists.",
+)
+def cmd_fetch_wiktionary(source: str, *, force: bool) -> None:
+    """Download and index the Kaikki Wiktionary dump for ``source``.
+
+    Once cached, subsequent ``annotate`` calls without ``--dictcc`` will use
+    this index automatically. Run this ahead of time on a fast connection if
+    you don't want the first ``annotate`` invocation to also be a
+    multi-hundred-megabyte download.
+    """
+    source = require_supported(source)
+    if force:
+        index = index_path_for(source)
+        if index.exists():
+            index.unlink()
+    try:
+        path = ensure_wiktionary_index(source, progress=_cli_download_progress)
+    except KaikkiDownloadError as exc:
+        click.echo(f"Download failed: {exc}", err=True)
+        sys.exit(2)
+    click.echo(f"\nWiktionary index ready: {path}")
+
+
+_PCT_COMPLETE = 100
+_LAST_PCT: dict[str, int] = {"value": -1}
+"""Per-process throttle for download-progress lines so we don't spam stderr."""
+
+
+def _cli_download_progress(stage: str, current: int, total: int | None) -> None:
+    """Stream Kaikki download/indexing progress to stderr.
+
+    Prints the download percentage at integer-percent granularity (so a
+    multi-hundred-megabyte fetch produces ~100 status lines, not millions).
+    Falls back to a byte count when ``Content-Length`` is missing.
+    """
+    if stage == "indexing":
+        click.echo("Indexing Kaikki dump into SQLite…", err=True)
+        _LAST_PCT["value"] = -1
+        return
+    if total:
+        pct = int(current * _PCT_COMPLETE / total)
+        if pct == _LAST_PCT["value"]:
+            return
+        _LAST_PCT["value"] = pct
+        click.echo(
+            f"\rDownloading Kaikki dump: {pct:3d}%  "
+            f"({current / 1_048_576:.1f} / {total / 1_048_576:.1f} MiB)",
+            err=True,
+            nl=False,
+        )
+        if pct == _PCT_COMPLETE:
+            click.echo("", err=True)
+    else:
+        click.echo(
+            f"\rDownloading Kaikki dump: {current / 1_048_576:.1f} MiB",
+            err=True,
+            nl=False,
+        )
 
 
 if __name__ == "__main__":

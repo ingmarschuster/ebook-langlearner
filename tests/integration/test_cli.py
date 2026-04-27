@@ -7,15 +7,20 @@ silently being dropped on the floor.
 
 from __future__ import annotations
 
+import http.server
+import json
+import threading
 import zipfile
 from typing import TYPE_CHECKING
 
+import pytest
 from click.testing import CliRunner
 
 from ebook_langlearner.cli import main
 from ebook_langlearner.epub_pipeline import STYLESHEET_FILENAME
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 
@@ -116,3 +121,114 @@ def test_annotate_rejects_out_of_range_pct(
     # Click's FloatRange returns exit code 2 for out-of-range values.
     assert result.exit_code == 2
     assert "ruby-font-pct" in result.output.lower() or "10" in result.output
+
+
+_AUTO_DOWNLOAD_FIXTURE = (
+    json.dumps({"word": "aubépine", "translations": [{"code": "en", "word": "hawthorn"}]})
+    + "\n"
+    + json.dumps({"word": "crépuscule", "translations": [{"code": "en", "word": "twilight"}]})
+    + "\n"
+).encode("utf-8")
+
+
+class _CliFixtureHandler(http.server.BaseHTTPRequestHandler):
+    expected_path = "/dictionary/French/kaikki.org-dictionary-French.jsonl"
+
+    def do_GET(self) -> None:
+        if self.path != self.expected_path:
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(_AUTO_DOWNLOAD_FIXTURE)))
+        self.end_headers()
+        self.wfile.write(_AUTO_DOWNLOAD_FIXTURE)
+
+    def log_message(self, *_args: object, **_kwargs: object) -> None:
+        return
+
+
+@pytest.fixture
+def cli_fixture_server() -> Generator[str, None, None]:
+    server = http.server.HTTPServer(("127.0.0.1", 0), _CliFixtureHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}/dictionary"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_annotate_auto_downloads_when_no_dictcc(
+    minimal_epub: Path,
+    cli_fixture_server: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Without --dictcc, the CLI must fetch + index the Wiktionary dump."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr("ebook_langlearner.dictionaries.wiktionary.cache_dir", lambda: cache)
+    monkeypatch.setattr(
+        "ebook_langlearner.dictionaries.download.KAIKKI_BASE_URL",
+        cli_fixture_server,
+    )
+    # The CLI looks up KAIKKI_BASE_URL via the module attribute at call time,
+    # so monkeypatching the module-level binding is sufficient.
+
+    output = tmp_path / "out.epub"
+    result = CliRunner().invoke(
+        main,
+        [
+            "annotate",
+            str(minimal_epub),
+            "--from",
+            "fr",
+            "--to",
+            "en",
+            "--cutoff",
+            "3.5",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Fixture got fetched and indexed under the patched cache dir.
+    assert (cache / "kaikki-fr.jsonl").exists()
+    assert (cache / "wiktionary-fr.sqlite").exists()
+    assert output.exists()
+
+
+def test_annotate_no_download_flag_blocks_auto_fetch(
+    minimal_epub: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """``--no-download`` must keep the CLI offline even when no backend is configured."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr("ebook_langlearner.dictionaries.wiktionary.cache_dir", lambda: cache)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "annotate",
+            str(minimal_epub),
+            "--from",
+            "fr",
+            "--to",
+            "en",
+            "--cutoff",
+            "3.5",
+            "--no-download",
+            "--output",
+            str(tmp_path / "out.epub"),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "no dictionary backend" in result.output.lower()
+    # No fetch happened.
+    assert not (cache / "kaikki-fr.jsonl").exists()
