@@ -9,12 +9,9 @@ Calibre's job panel so long runs don't block the UI.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from calibre.gui2.actions import InterfaceAction
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class EbookLangLearnerAction(InterfaceAction):
@@ -46,8 +43,8 @@ class EbookLangLearnerAction(InterfaceAction):
 
         book_id = self.gui.library_view.model().id(rows[0])
         db = self.gui.current_db.new_api
-        epub_path = db.format_abspath(book_id, "EPUB")
-        if not epub_path:
+        abs_path = db.format_abspath(book_id, "EPUB")
+        if not abs_path:
             from calibre.gui2 import error_dialog
 
             error_dialog(
@@ -57,6 +54,7 @@ class EbookLangLearnerAction(InterfaceAction):
                 show=True,
             )
             return
+        epub_path = Path(abs_path)
 
         dialog = AnnotationDialog(self.gui, epub_path)
         if dialog.exec() != dialog.DialogCode.Accepted:
