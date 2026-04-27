@@ -13,9 +13,13 @@ plugin from file*.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from calibre.customize import InterfaceActionBase
+
+if TYPE_CHECKING:
+    from calibre_plugins.ell.config import ConfigWidget
+    from qt.core import QWidget
 
 
 class EbookLangLearnerPlugin(InterfaceActionBase):
@@ -39,7 +43,7 @@ class EbookLangLearnerPlugin(InterfaceActionBase):
         """Enable the *Customize plugin* button so defaults can be configured."""
         return True
 
-    def config_widget(self):  # noqa: ANN201 — Calibre returns an opaque QWidget
+    def config_widget(self) -> QWidget:
         """Return the Qt config widget shown in *Customize plugin*.
 
         Constructed lazily so Qt isn't imported at plugin discovery time
@@ -50,6 +54,6 @@ class EbookLangLearnerPlugin(InterfaceActionBase):
 
         return ConfigWidget()
 
-    def save_settings(self, config_widget) -> None:  # noqa: ANN001
+    def save_settings(self, config_widget: ConfigWidget) -> None:
         """Persist the values entered in :meth:`config_widget`."""
         config_widget.save_settings()

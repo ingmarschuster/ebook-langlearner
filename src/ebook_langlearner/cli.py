@@ -27,7 +27,7 @@ from .dictionaries import (
 from .dictionaries.wiktionary import build_index
 from .epub_pipeline import annotate_epub
 from .languages import CORE_LANGUAGES, require_supported
-from .render import AnnotationFormat
+from .render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat
 
 if TYPE_CHECKING:
     from .dictionaries.base import Dictionary
@@ -111,6 +111,16 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
     help="Path to a dict.cc tab-separated export. Can be passed multiple times.",
 )
 @click.option(
+    "--ruby-font-pct",
+    type=click.FloatRange(min=50.0, max=120.0),
+    default=DEFAULT_RUBY_FONT_PCT,
+    show_default=True,
+    help=(
+        "Ruby translation font-size as a percentage of the base word's "
+        "font-size. Lower = smaller annotation."
+    ),
+)
+@click.option(
     "--output",
     "-o",
     type=click.Path(path_type=Path),
@@ -124,6 +134,7 @@ def cmd_annotate(
     level: str | None,
     fmt: str,
     dictcc_paths: tuple[Path, ...],
+    ruby_font_pct: float,
     output: Path | None,
 ) -> None:
     """Annotate an EPUB using the selected dictionary backends.
@@ -172,6 +183,7 @@ def cmd_annotate(
             target_lang=target,
             cutoff=cutoff,
             fmt=AnnotationFormat(fmt),
+            ruby_font_pct=ruby_font_pct,
         ),
     )
     stats = annotate_epub(input_epub, output, annotator)

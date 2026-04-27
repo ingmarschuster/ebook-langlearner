@@ -2,27 +2,59 @@
 
 This is the runtime :class:`InterfaceAction` Calibre wires up when the user
 adds the plugin. It adds a toolbar button (and context-menu entry) that
-opens the annotation dialog for the currently selected book, writes the
-annotated EPUB to the library as a new format, and shows progress in
-Calibre's job panel so long runs don't block the UI.
+opens the annotation dialog for the currently selected book, runs the
+annotation as a background job, and adds the result as a new book entry
+in the library.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from calibre.gui2.actions import InterfaceAction
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    from calibre.gui2.threaded_jobs import ThreadedJob
+
+
+def _setup_vendor_path() -> None:
+    """Prepend the plugin's ``vendor/`` directory to ``sys.path``.
+
+    The annotation pipeline imports ``ebooklib``, ``simplemma`` and
+    ``wordfreq`` as top-level packages; those are vendored inside the
+    plugin zip but Calibre's plugin import hook only resolves the
+    ``calibre_plugins.<name>.*`` namespace, not arbitrary subdirs. This
+    inserts ``vendor/`` once so the absolute imports inside ``ell/`` keep
+    working unmodified — the source ships unforked between CLI and plugin.
+    """
+    vendor_dir = str(Path(__file__).resolve().parent / "vendor")
+    if Path(vendor_dir).is_dir() and vendor_dir not in sys.path:
+        sys.path.insert(0, vendor_dir)
 
 
 class EbookLangLearnerAction(InterfaceAction):
     """Toolbar/context-menu entry point."""
 
     name = "ebook-langlearner"
-    action_spec = ("Annotate for language learners", None, "Add inline translations for rare words", None)
+    action_spec = (
+        "Annotate for language learners",
+        "images/icon.png",
+        "Add inline translations for rare words",
+        None,
+    )
     action_type = "current"
 
     def genesis(self) -> None:
-        """Wire the toolbar click to :meth:`open_dialog` (called by Calibre once)."""
+        """Wire the toolbar click to :meth:`open_dialog`.
+
+        The icon path in :attr:`action_spec` is resolved by Calibre's
+        plugin loader against the zip root, so no manual icon loading is
+        needed here.
+        """
         self.qaction.triggered.connect(self.open_dialog)
 
     def open_dialog(self) -> None:
@@ -81,27 +113,55 @@ class EbookLangLearnerAction(InterfaceAction):
             killable=False,
         )
         job.book_id = book_id
+        job.config = config
         self.gui.job_manager.run_threaded_job(job)
 
-    def _job_done(self, job) -> None:  # noqa: ANN001 — Calibre Job object is opaque
-        """Attach the annotated EPUB back to the book as a new format."""
+    def _job_done(self, job: ThreadedJob) -> None:
+        """Add the annotated EPUB to the library as a new book entry.
+
+        Adding it as a *new* entry (rather than overwriting the original
+        EPUB format on the source book) preserves the unannotated source
+        and surfaces the annotated copy as its own item in the library
+        view, which matches user expectations for "process this book".
+        """
         if job.failed:
             self.gui.job_exception(job, dialog_title="Annotation failed")
             return
-        output_path = job.result
-        book_id = job.book_id
+
+        output_path: Path = job.result
+        source_book_id: int = job.book_id
+        config: dict = job.config
+
         db = self.gui.current_db.new_api
-        db.add_format(book_id, "EPUB", str(output_path), replace=False)
-        self.gui.library_view.model().refresh_ids([book_id])
+        mi = db.get_metadata(source_book_id, get_cover=True, cover_as_data=True)
+        suffix = f"({config['level'].upper()} {config['source']}→{config['target']})"
+        mi.title = f"{mi.title} {suffix}"
+        new_id = db.create_book_entry(mi, add_duplicates=True)
+        db.add_format(new_id, "EPUB", str(output_path), replace=True)
+        self.gui.library_view.model().books_added(1)
+        self.gui.library_view.model().refresh_ids([new_id])
 
 
-def _annotate_job(input_epub: Path, config: dict, log, abort, notifications) -> Path:  # noqa: ANN001, ARG001
+def _annotate_job(
+    input_epub: Path,
+    config: dict,
+    log: Any,
+    abort: Any,
+    notifications: Any,
+) -> Path:
     """Run the annotation pipeline on a worker thread.
 
-    The bundled :mod:`ell` package (the project's ``src/ebook_langlearner``
-    copied into the plugin zip) is imported lazily here so the plugin
-    import cost at Calibre startup stays near zero.
+    Sets up the vendor import path before importing the bundled ``ell``
+    pipeline so its absolute imports (``ebooklib``, ``simplemma``,
+    ``wordfreq``) resolve to the vendored copies inside the plugin zip.
+
+    ``log``, ``abort``, and ``notifications`` are passed positionally by
+    Calibre's :class:`ThreadedJob` machinery; this pipeline doesn't surface
+    progress, so they are accepted but unused.
     """
+    del log, abort, notifications
+    _setup_vendor_path()
+
     from calibre_plugins.ell.ell.annotate import AnnotationConfig, Annotator
     from calibre_plugins.ell.ell.cefr import cefr_cutoff
     from calibre_plugins.ell.ell.dictionaries import DictCCDictionary
@@ -110,7 +170,7 @@ def _annotate_job(input_epub: Path, config: dict, log, abort, notifications) -> 
 
     cutoff = cefr_cutoff(config["source"], config["level"])
     dictionary = DictCCDictionary.from_file(
-        config["dictcc_path"], config["source"], config["target"]
+        Path(config["dictcc_path"]), config["source"], config["target"]
     )
     annotator = Annotator(
         dictionary,
@@ -119,6 +179,7 @@ def _annotate_job(input_epub: Path, config: dict, log, abort, notifications) -> 
             target_lang=config["target"],
             cutoff=cutoff,
             fmt=AnnotationFormat(config["format"]),
+            ruby_font_pct=float(config["ruby_font_pct"]),
         ),
     )
     output_path = input_epub.with_suffix(f".{config['level']}.annotated.epub")

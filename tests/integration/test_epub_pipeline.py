@@ -81,3 +81,31 @@ def test_stylesheet_is_added_and_linked(
     assert any(STYLESHEET_FILENAME in c for c in chapter_htmls), (
         "at least one chapter must reference the annotation stylesheet"
     )
+
+
+def test_custom_ruby_font_pct_propagates_to_stylesheet(
+    minimal_epub: Path,
+    permissive_fr_dict: Dictionary,
+    tmp_path: Path,
+):
+    """A non-default ``ruby_font_pct`` must surface in the bundled CSS file."""
+    annotator = Annotator(
+        permissive_fr_dict,
+        AnnotationConfig(
+            source_lang="fr",
+            target_lang="en",
+            cutoff=3.5,
+            fmt=AnnotationFormat.RUBY,
+            ruby_font_pct=72.0,
+        ),
+    )
+    out_path = tmp_path / "annotated.epub"
+    annotate_epub(minimal_epub, out_path, annotator)
+
+    with zipfile.ZipFile(out_path) as zf:
+        css_names = [n for n in zf.namelist() if n.endswith(STYLESHEET_FILENAME)]
+        assert css_names, "stylesheet must be present"
+        css = zf.read(css_names[0]).decode("utf-8")
+
+    assert "font-size: 72%" in css
+    assert "font-size: 90%" not in css

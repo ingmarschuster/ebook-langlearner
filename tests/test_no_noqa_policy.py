@@ -11,7 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-SCAN_DIRS = ("src", "tests", "scripts")
+SCAN_DIRS = ("src", "tests", "scripts", "calibre-plugin")
 
 FORBIDDEN_PATTERNS = {
     "noqa": re.compile(r"#\s*noqa\b", re.IGNORECASE),
@@ -49,7 +49,6 @@ def test_no_suppression_comments():
                 for label, pattern in FORBIDDEN_PATTERNS.items():
                     if pattern.search(line):
                         offenders.append((rel, lineno, label))
-    assert not offenders, (
-        "Forbidden suppression comments found (see AGENTS.md):\n"
-        + "\n".join(f"  {path}:{line} — {kind}" for path, line, kind in offenders)
+    assert not offenders, "Forbidden suppression comments found (see AGENTS.md):\n" + "\n".join(
+        f"  {path}:{line} — {kind}" for path, line, kind in offenders
     )

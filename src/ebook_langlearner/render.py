@@ -52,18 +52,41 @@ def render_translations(word: str, translations: list[str], fmt: AnnotationForma
     return f'<span class="ell-annot">{safe_word} ({joined})</span>'
 
 
-RUBY_CSS = """
-body { line-height: 1.7; }
-ruby.ell-annot { ruby-align: center; }
-ruby.ell-annot rt.ell-rt { font-size: 0.55em; opacity: 0.75; line-height: 1; }
-span.ell-annot { }
-""".strip()
-"""CSS injected into annotated EPUBs to size and style the ruby annotations.
+DEFAULT_RUBY_FONT_PCT = 90.0
+"""Default ruby translation font-size, as a percentage of the base word's font-size.
 
-The ``body { line-height: 1.7 }`` reserves vertical room for every line so the
-rt annotation can sit above without expanding any line-box. The
-``rt { line-height: 1 }`` prevents the rt's own line-height from contributing
-to its parent's line-box height — without it, readers like Calibre
-(QtWebEngine) and Kindle KF8 promote the whole paragraph's line-box to fit
-the rt, which visibly spreads *ruby-less* neighbouring lines apart.
+90% renders the rt slightly smaller than the surrounding word — visible
+enough to read, distinct enough to skim past when not needed. Pure
+percent (rather than ``calc(1em - Npt)``) keeps the stylesheet portable
+across readers without depending on CSS ``calc()`` support.
 """
+
+
+def build_ruby_css(ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT) -> str:
+    """Build the annotation stylesheet, sizing the rt relative to the base.
+
+    Args:
+        ruby_font_pct: Ruby translation font-size as a percentage of the
+            base word's font-size. ``100.0`` keeps the rt the same size;
+            below ~50 the rt becomes hard to read, above ~120 it dwarfs
+            the base word.
+
+    Returns:
+        A self-contained CSS string suitable for shipping inside an EPUB.
+
+    The ``body { line-height: 1.7 }`` reserves vertical room for every line
+    so the rt annotation can sit above without expanding any line-box. The
+    ``rt { line-height: 1 }`` prevents the rt's own line-height from
+    contributing to its parent's line-box height — without it, readers like
+    Calibre (QtWebEngine) and Kindle KF8 promote the whole paragraph's
+    line-box to fit the rt, which visibly spreads *ruby-less* neighbouring
+    lines apart.
+    """
+    pct_value = f"{ruby_font_pct:g}%"
+    return (
+        "body { line-height: 1.7; }\n"
+        "ruby.ell-annot { ruby-align: center; }\n"
+        f"ruby.ell-annot rt.ell-rt {{ font-size: {pct_value}; "
+        "opacity: 0.75; line-height: 1; }\n"
+        "span.ell-annot { }"
+    )

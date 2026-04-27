@@ -15,7 +15,7 @@ from .dictionaries.base import Dictionary, LookupKey, rank_candidates
 from .frequency import zipf
 from .lemma_frequency import lemma_zipf
 from .lemmatize import lemmatize
-from .render import AnnotationFormat, render_translations
+from .render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat, render_translations
 from .tokenize import (
     SENTENCE_END,
     Token,
@@ -40,6 +40,9 @@ class AnnotationConfig:
         max_translations: Maximum candidates per annotated word. Defaults to 2
             (rendered as ``a/b``).
         min_word_length: Words shorter than this are skipped (never annotated).
+        ruby_font_pct: Ruby translation font-size as a percentage of the
+            base word's font-size. Only consulted when ``fmt`` is
+            :attr:`AnnotationFormat.RUBY`. See :func:`render.build_ruby_css`.
     """
 
     source_lang: str
@@ -48,6 +51,7 @@ class AnnotationConfig:
     fmt: AnnotationFormat = AnnotationFormat.RUBY
     max_translations: int = 2
     min_word_length: int = 2
+    ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT
 
 
 class Annotator:
@@ -69,6 +73,11 @@ class Annotator:
         """
         self._dict = dictionary
         self._cfg = config
+
+    @property
+    def config(self) -> AnnotationConfig:
+        """Return the immutable :class:`AnnotationConfig` this annotator was built with."""
+        return self._cfg
 
     def annotate_text(self, text: str) -> str:
         """Annotate a plain-text string.

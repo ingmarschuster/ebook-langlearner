@@ -22,6 +22,13 @@ build/
 .cache/
 /cache/
 
+# Calibre plugin: ell/ and vendor/ are populated at build time, not by hand.
+# Keep the .gitkeep / README.md placeholders so the empty dirs are tracked.
+calibre-plugin/ell/*
+!calibre-plugin/ell/.gitkeep
+calibre-plugin/vendor/*
+!calibre-plugin/vendor/README.md
+
 # Node / Playwright
 node_modules/
 playwright-report/

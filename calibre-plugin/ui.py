@@ -1,7 +1,8 @@
 """Qt dialog for the annotation action.
 
 Prompts the user for source/target language, CEFR level, annotation format,
-and a dict.cc TSV file path. Returns the selection as a dict consumed by
+a dict.cc TSV file path, and the ruby font-size percent. Returns the
+selection as a dict consumed by
 :func:`calibre_plugins.ell.action._annotate_job`.
 
 Uses Calibre's ``qt.core`` shim so the same source works on both Qt5 and
@@ -10,10 +11,13 @@ Qt6 Calibre builds.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from qt.core import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -23,11 +27,19 @@ from qt.core import (
     QWidget,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+DEFAULT_RUBY_FONT_PCT = 90.0
+"""Default ruby font-size percent. Mirrors the CLI default — kept inline so
+this module stays import-safe before the vendored ``ell`` package is on
+``sys.path``."""
+
 
 class AnnotationDialog(QDialog):
     """Modal dialog collecting annotation parameters."""
 
-    def __init__(self, parent: QWidget, epub_path) -> None:  # noqa: ANN001
+    def __init__(self, parent: QWidget, epub_path: Path) -> None:
         """Build the dialog for ``epub_path`` (shown in the title)."""
         super().__init__(parent)
         self.setWindowTitle(f"Annotate: {epub_path.name}")
@@ -61,14 +73,27 @@ class AnnotationDialog(QDialog):
         dictcc_container = QWidget()
         dictcc_container.setLayout(dictcc_row)
 
+        self.ruby_font_pct = QDoubleSpinBox()
+        self.ruby_font_pct.setRange(50.0, 120.0)
+        self.ruby_font_pct.setDecimals(0)
+        self.ruby_font_pct.setSingleStep(5.0)
+        self.ruby_font_pct.setSuffix(" %")
+        self.ruby_font_pct.setValue(DEFAULT_RUBY_FONT_PCT)
+        self.ruby_font_pct.setToolTip(
+            "Ruby translation font-size as a percentage of the base word's font-size."
+        )
+
         form.addRow("From:", self.source)
         form.addRow("To:", self.target)
         form.addRow("CEFR level:", self.level)
         form.addRow("Format:", self.fmt)
         form.addRow("dict.cc TSV:", dictcc_container)
+        form.addRow("Ruby font size:", self.ruby_font_pct)
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -89,6 +114,7 @@ class AnnotationDialog(QDialog):
             "level": self.level.currentData(),
             "format": self.fmt.currentData(),
             "dictcc_path": self.dictcc.text(),
+            "ruby_font_pct": float(self.ruby_font_pct.value()),
         }
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ebook_langlearner.annotate import AnnotationConfig, Annotator
-from ebook_langlearner.render import AnnotationFormat
+from ebook_langlearner.render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat
 
 
 def _annotator(static_dict_factory, *, fmt=AnnotationFormat.RUBY, cutoff=4.5):
@@ -119,6 +119,19 @@ def test_no_dictionary_hit_leaves_word_plain(static_dict_factory):
     # wordfreq may treat pétunia as rare, but without a candidate we don't wrap.
     assert "pétunia" in out
     assert "<ruby" not in out or "pétunia" not in _inside_ruby(out)
+
+
+def test_annotation_config_defaults_ruby_font_pct():
+    cfg = AnnotationConfig(source_lang="fr", target_lang="en", cutoff=3.0)
+    assert cfg.ruby_font_pct == DEFAULT_RUBY_FONT_PCT
+
+
+def test_annotator_exposes_config_via_property(static_dict_factory):
+    dictionary = static_dict_factory("fr", {})
+    cfg = AnnotationConfig(source_lang="fr", target_lang="en", cutoff=3.0, ruby_font_pct=72.5)
+    annotator = Annotator(dictionary, cfg)
+    assert annotator.config is cfg
+    assert annotator.config.ruby_font_pct == 72.5
 
 
 def _inside_ruby(html: str) -> str:
