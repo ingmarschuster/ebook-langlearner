@@ -79,8 +79,8 @@ class EbookLangLearnerAction(InterfaceAction):
             {},
             self._job_done,
             killable=False,
-            book_id=book_id,
         )
+        job.book_id = book_id
         self.gui.job_manager.run_threaded_job(job)
 
     def _job_done(self, job) -> None:  # noqa: ANN001 — Calibre Job object is opaque
