@@ -30,12 +30,23 @@ ALLOWED_FILES = frozenset(
 )
 
 
+SKIP_DIR_PARTS = frozenset({"vendor"})
+"""Directory names anywhere in the path that we skip entirely.
+
+The Calibre plugin vendors third-party packages (ebooklib, simplemma,
+wordfreq) under ``calibre-plugin/vendor/``; their suppression comments are
+not ours to police.
+"""
+
+
 def _iter_python_files():
     for top in SCAN_DIRS:
         root = REPO_ROOT / top
         if not root.exists():
             continue
-        yield from root.rglob("*.py")
+        for path in root.rglob("*.py"):
+            if SKIP_DIR_PARTS.isdisjoint(path.parts):
+                yield path
 
 
 def test_no_suppression_comments():

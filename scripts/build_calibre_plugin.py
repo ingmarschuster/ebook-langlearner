@@ -14,38 +14,82 @@ Steps:
    zip ships a 48 px PNG that Calibre can use for the toolbar action.
 5. Zip the plugin directory flat into ``dist/ebook-langlearner-<version>.zip``.
 
+Missing build/runtime dependencies are pip-installed into ``build/_deps/``
+on demand, so a fresh checkout produces a usable zip without the developer
+having to ``uv sync`` the optional build extras first.
+
 Run via ``uv run python scripts/build_calibre_plugin.py``.
 """
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
-
-try:
-    import cairosvg as _cairosvg
-except ImportError:
-    _cairosvg = None
 
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src" / "ebook_langlearner"
 PLUGIN = REPO / "calibre-plugin"
 DIST = REPO / "dist"
+BUILD_DEPS = REPO / "build" / "_deps"
 VERSION = "0.1.0"
 
 CORE_LANGS: frozenset[str] = frozenset({"de", "en", "es", "fr", "it", "nl", "pl", "pt", "sv"})
 
 
-def _find_installed(pkg_name: str) -> Path:
-    """Locate the on-disk source directory of an installed Python package."""
+def _ensure_installed(pkg_name: str, *, pip_name: str | None = None) -> Path:
+    """Return the on-disk source directory of ``pkg_name``, installing if missing.
+
+    Looks in the current environment first; if ``pkg_name`` is not importable
+    there, pip-installs ``pip_name`` (defaults to ``pkg_name``) into
+    ``build/_deps/`` and adds that directory to ``sys.path`` so the spec
+    lookup succeeds on the second attempt. Keeps the build self-sufficient
+    against partial dev environments.
+    """
     spec = importlib.util.find_spec(pkg_name)
     if spec is None or not spec.submodule_search_locations:
-        msg = f"{pkg_name} is not installed in the current environment"
+        target = BUILD_DEPS
+        target.mkdir(parents=True, exist_ok=True)
+        if str(target) not in sys.path:
+            sys.path.insert(0, str(target))
+        print(f"  installing {pkg_name} into {target.relative_to(REPO)}")
+        subprocess.run(
+            _pip_install_cmd(target, pip_name or pkg_name),
+            check=True,
+        )
+        importlib.invalidate_caches()
+        spec = importlib.util.find_spec(pkg_name)
+    if spec is None or not spec.submodule_search_locations:
+        msg = f"{pkg_name} could not be installed or located"
         raise SystemExit(msg)
     return Path(spec.submodule_search_locations[0])
+
+
+def _pip_install_cmd(target: Path, requirement: str) -> list[str]:
+    """Build the install command, preferring ``uv pip`` when available.
+
+    ``uv``-managed virtualenvs ship without ``pip``, so ``python -m pip`` fails
+    inside them. When the ``uv`` binary is on PATH we use ``uv pip install
+    --target`` instead; otherwise we fall back to ``python -m pip`` for
+    classic CPython environments.
+    """
+    uv = shutil.which("uv")
+    if uv is not None:
+        return [uv, "pip", "install", "--quiet", "--target", str(target), requirement]
+    return [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--quiet",
+        "--target",
+        str(target),
+        requirement,
+    ]
 
 
 def _copy_tree(src: Path, dst: Path) -> None:
@@ -75,19 +119,25 @@ def _prune_lang_data(directory: Path, suffix: str) -> int:
 
 
 def build_ell() -> None:
-    """Mirror ``src/ebook_langlearner`` into ``calibre-plugin/ell/``."""
-    _copy_tree(SRC, PLUGIN / "ell")
+    """Mirror ``src/ebook_langlearner`` into ``calibre-plugin/ell/``.
+
+    Re-creates the ``.gitkeep`` sentinel afterwards so the placeholder that
+    keeps the (otherwise gitignored) directory tracked survives every build.
+    """
+    dst = PLUGIN / "ell"
+    _copy_tree(SRC, dst)
+    (dst / ".gitkeep").touch()
 
 
 def build_ebooklib() -> None:
     """Vendor the ``ebooklib`` source tree into ``calibre-plugin/vendor/``."""
-    _copy_tree(_find_installed("ebooklib"), PLUGIN / "vendor" / "ebooklib")
+    _copy_tree(_ensure_installed("ebooklib", pip_name="EbookLib"), PLUGIN / "vendor" / "ebooklib")
 
 
 def build_simplemma() -> None:
     """Vendor ``simplemma`` and prune per-language model files outside the core set."""
     dst = PLUGIN / "vendor" / "simplemma"
-    _copy_tree(_find_installed("simplemma"), dst)
+    _copy_tree(_ensure_installed("simplemma"), dst)
     n = _prune_lang_data(dst / "strategies" / "dictionaries" / "data", ".plzma")
     print(f"  simplemma: pruned {n} non-core language data files")
 
@@ -95,7 +145,7 @@ def build_simplemma() -> None:
 def build_wordfreq() -> None:
     """Vendor ``wordfreq`` and prune per-language msgpack data outside the core set."""
     dst = PLUGIN / "vendor" / "wordfreq"
-    _copy_tree(_find_installed("wordfreq"), dst)
+    _copy_tree(_ensure_installed("wordfreq"), dst)
     data = dst / "data"
     n = _prune_lang_data(data, ".msgpack.gz")
     # Keep the Chinese mapping table (named without a language suffix) and any
@@ -107,10 +157,11 @@ def build_wordfreq() -> None:
 def build_icon() -> None:
     """Render ``calibre-plugin/icon.svg`` to a 48 px ``images/icon.png``.
 
-    Uses Pillow because Calibre wants a raster icon and Pillow is already a
-    common dev dependency. If the source SVG is missing the build skips the
-    step and warns; the plugin still works without an icon (Calibre falls
-    back to a generic puzzle-piece glyph).
+    Pip-installs ``cairosvg`` into ``build/_deps`` on demand if it is not
+    already importable, so a clean checkout produces a real raster icon
+    without manual setup. If the source SVG is missing the build skips the
+    step; the plugin still works without an icon (Calibre falls back to a
+    generic puzzle-piece glyph).
     """
     svg = PLUGIN / "icon.svg"
     out_dir = PLUGIN / "images"
@@ -119,10 +170,9 @@ def build_icon() -> None:
     if not svg.is_file():
         print("  icon: icon.svg missing, skipping")
         return
-    if _cairosvg is None:
-        print("  icon: cairosvg not installed; install with 'uv add --dev cairosvg' to render")
-        return
-    _cairosvg.svg2png(url=str(svg), write_to=str(out), output_width=48, output_height=48)
+    _ensure_installed("cairosvg")
+    cairosvg = importlib.import_module("cairosvg")
+    cairosvg.svg2png(url=str(svg), write_to=str(out), output_width=48, output_height=48)
     print(f"  icon: rendered {out.relative_to(REPO)}")
 
 
