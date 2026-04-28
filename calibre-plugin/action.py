@@ -28,6 +28,54 @@ if TYPE_CHECKING:
 
 _VENDOR_STATE: dict[str, Path | None] = {"dir": None}
 
+_ACTIVE_LEVEL_MARKER = b"BEGIN ELL ACTIVE LEVEL"
+_ANNOT_CLASS_MARKER = b"ell-annot"
+
+
+def _epub_has_active_level_markers(epub_path: Path) -> bool:
+    """Return ``True`` if the EPUB carries the multi-level annotation stylesheet.
+
+    Pre-flight check used by the GUI before queuing a set-level job. Books
+    annotated with the pre-multi-level plugin lack the markers and would
+    otherwise hit ``MissingStylesheetError`` deep in a worker thread, where
+    the failure path on macOS Calibre logs a traceback through a
+    cross-thread ``QTextDocument`` and segfaults the app.
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(epub_path) as zf:
+            for name in zf.namelist():
+                if not name.endswith("ell-annotations.css"):
+                    continue
+                with zf.open(name) as fh:
+                    if _ACTIVE_LEVEL_MARKER in fh.read():
+                        return True
+    except (zipfile.BadZipFile, OSError):
+        return False
+    return False
+
+
+def _epub_is_annotated(epub_path: Path) -> bool:
+    """Return ``True`` if the EPUB contains any ``ell-annot`` markup.
+
+    Pre-flight check for strip — avoids replacing the EPUB format with an
+    identical-content copy when the user runs strip on an unannotated book.
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(epub_path) as zf:
+            for info in zf.infolist():
+                if not info.filename.endswith((".xhtml", ".html", ".htm")):
+                    continue
+                with zf.open(info) as fh:
+                    if _ANNOT_CLASS_MARKER in fh.read():
+                        return True
+    except (zipfile.BadZipFile, OSError):
+        return False
+    return False
+
 
 def _setup_vendor_path() -> None:
     """Insert the extracted vendor directory onto ``sys.path``.
@@ -161,12 +209,24 @@ class EbookLangLearnerAction(InterfaceAction):
 
     def open_set_level(self) -> None:
         """Prompt for a CEFR level and rewrite the EPUB's active-level block."""
+        from calibre.gui2 import error_dialog
         from qt.core import QInputDialog
 
         selection = self._selected_epub()
         if selection is None:
             return
         book_id, epub_path = selection
+
+        if not _epub_has_active_level_markers(epub_path):
+            error_dialog(
+                self.gui,
+                "Not annotated for level switching",
+                "This EPUB doesn't have the multi-level annotation stylesheet. "
+                "Run Annotate on it first (with this version of the plugin), "
+                "then Change visible level becomes available.",
+                show=True,
+            )
+            return
 
         levels = ("A1", "A2", "B1", "B2", "C1", "C2")
         level, ok = QInputDialog.getItem(
@@ -182,12 +242,21 @@ class EbookLangLearnerAction(InterfaceAction):
 
     def open_strip(self) -> None:
         """Strip every annotation from the selected book."""
-        from calibre.gui2 import question_dialog
+        from calibre.gui2 import error_dialog, question_dialog
 
         selection = self._selected_epub()
         if selection is None:
             return
         book_id, epub_path = selection
+
+        if not _epub_is_annotated(epub_path):
+            error_dialog(
+                self.gui,
+                "Nothing to strip",
+                "This EPUB has no annotations from this plugin.",
+                show=True,
+            )
+            return
 
         confirm = question_dialog(
             self.gui,

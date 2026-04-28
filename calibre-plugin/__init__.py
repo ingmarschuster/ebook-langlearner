@@ -34,7 +34,7 @@ class EbookLangLearnerPlugin(InterfaceActionBase):
     description = "Annotate rare words in EPUB files with inline translations."
     supported_platforms: ClassVar[list[str]] = ["windows", "osx", "linux"]
     author = "Ingmar Schuster"
-    version = (0, 1, 1)
+    version = (0, 1, 2)
     minimum_calibre_version = (6, 0, 0)
 
     actual_plugin = "calibre_plugins.ell.action:EbookLangLearnerAction"

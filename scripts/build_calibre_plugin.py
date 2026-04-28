@@ -38,7 +38,7 @@ SRC = REPO / "src" / "ebook_langlearner"
 PLUGIN = REPO / "calibre-plugin"
 DIST = REPO / "dist"
 BUILD_DEPS = REPO / "build" / "_deps"
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 CORE_LANGS: frozenset[str] = frozenset({"de", "en", "es", "fr", "it", "nl", "pl", "pt", "sv"})
 
@@ -156,6 +156,26 @@ def build_wordfreq() -> None:
     # remaining language-agnostic resources; only language-specific msgpack
     # files were pruned above.
     print(f"  wordfreq: pruned {n} non-core msgpack files")
+
+
+def build_wordfreq_deps() -> None:
+    """Vendor wordfreq's transitive runtime deps so worker imports resolve.
+
+    ``import wordfreq`` pulls in ``langcodes``, ``msgpack``, ``ftfy``,
+    ``regex`` and ``wcwidth`` at module load time. Calibre's bundled Python
+    has none of these, so the worker fails with ``ModuleNotFoundError`` on
+    the first frequency lookup. The build runs on the user's own machine,
+    so any C extensions copied here (e.g. ``regex``'s ``_regex.*.so``) are
+    built for the same Python ABI Calibre uses.
+    """
+    for pkg, pip_name in (
+        ("langcodes", None),
+        ("msgpack", None),
+        ("ftfy", None),
+        ("regex", None),
+        ("wcwidth", None),
+    ):
+        _copy_tree(_ensure_installed(pkg, pip_name=pip_name), PLUGIN / "vendor" / pkg)
 
 
 _LIBCAIRO_FALLBACK_DIRS = (
@@ -286,6 +306,7 @@ def main() -> int:
     build_ebooklib()
     build_simplemma()
     build_wordfreq()
+    build_wordfreq_deps()
     build_icon()
     out = write_zip()
     size_mb = out.stat().st_size / (1024 * 1024)
