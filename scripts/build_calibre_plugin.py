@@ -23,9 +23,10 @@ Run via ``uv run python scripts/build_calibre_plugin.py``.
 
 from __future__ import annotations
 
-import ctypes
+import ctypes.util
 import importlib
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -189,25 +190,38 @@ def _libcairo_candidates() -> list[Path]:
     return seen
 
 
-def _preload_libcairo() -> bool:
-    """Pre-load libcairo from a known location so cairocffi can find it.
+_REEXEC_GUARD = "ELL_BUILD_LIBCAIRO_REEXECED"
 
-    miniforge/conda Pythons on macOS do not search ``/opt/homebrew/lib`` by
-    default, so even after ``brew install cairo`` cairocffi's bare-name
-    ``dlopen`` fails. Loading the library at an absolute path via
-    :mod:`ctypes` registers it with the dynamic linker; cairocffi's
-    subsequent leaf-name lookup then resolves to the already-loaded handle.
-    Returns ``True`` if a candidate was loaded, ``False`` otherwise.
+
+def _ensure_libcairo_loadable() -> None:
+    """Re-exec with ``DYLD_FALLBACK_LIBRARY_PATH`` set if needed (macOS only).
+
+    miniforge/conda Pythons on macOS do not search ``/opt/homebrew`` by
+    default, so even after ``brew install cairo`` cairocffi's ``dlopen``
+    fails. ``ctypes.CDLL`` with an absolute path doesn't help either: dyld
+    matches subsequent ``dlopen`` calls by ``install_name``, and Homebrew's
+    libcairo records its full Cellar path. The only reliable fix is to put
+    the directory on ``DYLD_FALLBACK_LIBRARY_PATH`` *before* dyld initialises
+    — which means re-execing the interpreter. A guard env var prevents
+    infinite loops if the re-exec still can't load the library.
     """
-    for path in _libcairo_candidates():
-        if not path.is_file():
-            continue
-        try:
-            ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
-        except OSError:
-            continue
-        return True
-    return False
+    if sys.platform != "darwin":
+        return
+    if os.environ.get(_REEXEC_GUARD) == "1":
+        return
+    if ctypes.util.find_library("cairo") is not None:
+        return
+    found = next((p for p in _libcairo_candidates() if p.is_file()), None)
+    if found is None:
+        return
+    new_env = os.environ.copy()
+    existing = new_env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    new_env["DYLD_FALLBACK_LIBRARY_PATH"] = (
+        f"{found.parent}:{existing}" if existing else str(found.parent)
+    )
+    new_env[_REEXEC_GUARD] = "1"
+    print(f"  re-execing with DYLD_FALLBACK_LIBRARY_PATH={found.parent} so cairo loads")
+    os.execve(sys.executable, [sys.executable, *sys.argv], new_env)
 
 
 def build_icon() -> None:
@@ -216,11 +230,10 @@ def build_icon() -> None:
     Pip-installs ``cairosvg`` into ``build/_deps`` on demand if it is not
     already importable, so a clean checkout produces a real raster icon
     without manual setup. ``cairosvg`` needs the native ``libcairo`` library
-    at runtime; we probe the well-known Homebrew and Linux distro paths and
-    pre-load it via :mod:`ctypes` so it is visible even from a miniforge or
-    conda Python whose dyld search path does not include them. If neither
-    that probe nor cairocffi's own search succeeds we abort with a one-line
-    install hint.
+    at runtime; :func:`_ensure_libcairo_loadable` runs early in :func:`main`
+    and re-execs us with the right ``DYLD_FALLBACK_LIBRARY_PATH`` if dyld
+    cannot find libcairo on its own. If even that fails we abort with a
+    one-line install hint.
     """
     svg = PLUGIN / "icon.svg"
     out_dir = PLUGIN / "images"
@@ -230,7 +243,6 @@ def build_icon() -> None:
         print("  icon: icon.svg missing, skipping")
         return
     _ensure_installed("cairosvg")
-    _preload_libcairo()
     try:
         cairosvg = importlib.import_module("cairosvg")
     except OSError as exc:
@@ -266,6 +278,7 @@ def write_zip() -> Path:
 
 def main() -> int:
     """Run the full build and report the final zip path and size."""
+    _ensure_libcairo_loadable()
     print("Building Calibre plugin payload...")
     build_ell()
     build_ebooklib()

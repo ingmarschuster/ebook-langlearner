@@ -97,9 +97,10 @@ ignore = [
 # The package dunder init re-exports; docstring coverage is at module level.
 "**/__init__.py" = ["D104"]
 # Build scripts are entry points; stdout progress is the intended output, and
-# subprocess calls there use hardcoded internal arg lists (S603 is flagged
-# flow-insensitively despite the inputs being build-script constants).
-"scripts/**" = ["T201", "S603"]
+# subprocess/os.exec* calls there use hardcoded internal arg lists (S603 and
+# S606 are flagged flow-insensitively despite the inputs being build-script
+# constants — sys.executable plus our own sys.argv).
+"scripts/**" = ["T201", "S603", "S606"]
 # Calibre plugin source: directory name contains a hyphen by Calibre convention
 # (N999), and lazy imports of calibre.* / qt.core inside methods are idiomatic
 # (PLC0415) — Calibre loads every plugin's descriptor at startup and must not
