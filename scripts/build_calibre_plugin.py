@@ -155,13 +155,38 @@ def build_wordfreq() -> None:
     print(f"  wordfreq: pruned {n} non-core msgpack files")
 
 
-_LIBCAIRO_CANDIDATES = (
-    "/opt/homebrew/lib/libcairo.2.dylib",
-    "/usr/local/lib/libcairo.2.dylib",
-    "/usr/lib/x86_64-linux-gnu/libcairo.so.2",
-    "/usr/lib/aarch64-linux-gnu/libcairo.so.2",
-    "/usr/lib64/libcairo.so.2",
+_LIBCAIRO_FALLBACK_DIRS = (
+    "/opt/homebrew/lib",
+    "/usr/local/lib",
+    "/usr/lib/x86_64-linux-gnu",
+    "/usr/lib/aarch64-linux-gnu",
+    "/usr/lib64",
 )
+_LIBCAIRO_LEAFNAMES = ("libcairo.2.dylib", "libcairo.so.2")
+
+
+def _libcairo_candidates() -> list[Path]:
+    """Yield absolute libcairo paths to probe, Homebrew-aware first.
+
+    Asks ``brew --prefix cairo`` when ``brew`` is on PATH so we pick up
+    non-default prefixes (Apple Silicon, custom HOMEBREW_PREFIX, etc.).
+    Falls back to a hardcoded list covering the common Homebrew and Linux
+    distro locations.
+    """
+    seen: list[Path] = []
+    brew = shutil.which("brew")
+    if brew is not None:
+        try:
+            prefix = subprocess.check_output(
+                [brew, "--prefix", "cairo"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except (subprocess.CalledProcessError, OSError):
+            prefix = ""
+        if prefix:
+            seen.extend(Path(prefix) / "lib" / leaf for leaf in _LIBCAIRO_LEAFNAMES)
+    for directory in _LIBCAIRO_FALLBACK_DIRS:
+        seen.extend(Path(directory) / leaf for leaf in _LIBCAIRO_LEAFNAMES)
+    return seen
 
 
 def _preload_libcairo() -> bool:
@@ -174,11 +199,11 @@ def _preload_libcairo() -> bool:
     subsequent leaf-name lookup then resolves to the already-loaded handle.
     Returns ``True`` if a candidate was loaded, ``False`` otherwise.
     """
-    for path in _LIBCAIRO_CANDIDATES:
-        if not Path(path).is_file():
+    for path in _libcairo_candidates():
+        if not path.is_file():
             continue
         try:
-            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+            ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
         except OSError:
             continue
         return True
