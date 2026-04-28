@@ -159,11 +159,9 @@ def build_icon() -> None:
 
     Pip-installs ``cairosvg`` into ``build/_deps`` on demand if it is not
     already importable, so a clean checkout produces a real raster icon
-    without manual setup. ``cairosvg`` needs the native ``libcairo`` library
-    at runtime; if it is missing (common on a fresh macOS install) we emit a
-    one-line hint with the platform's install command and skip the icon.
-    The plugin still works without it — Calibre falls back to a generic
-    puzzle-piece glyph.
+    without manual setup. If the source SVG is missing the build skips the
+    step; the plugin still works without an icon (Calibre falls back to a
+    generic puzzle-piece glyph).
     """
     svg = PLUGIN / "icon.svg"
     out_dir = PLUGIN / "images"
@@ -176,9 +174,9 @@ def build_icon() -> None:
     try:
         cairosvg = importlib.import_module("cairosvg")
     except OSError as exc:
-        print(f"  icon: skipped (libcairo unavailable: {exc.__class__.__name__})")
-        print(f"        install it with: {_libcairo_install_hint()}")
-        return
+        hint = _libcairo_install_hint()
+        msg = f"cairosvg cannot load the native libcairo library: {exc}\nInstall it with: {hint}"
+        raise SystemExit(msg) from exc
     cairosvg.svg2png(url=str(svg), write_to=str(out), output_width=48, output_height=48)
     print(f"  icon: rendered {out.relative_to(REPO)}")
 
