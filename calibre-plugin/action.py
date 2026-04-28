@@ -306,16 +306,16 @@ def _annotate_job(
     del abort
     _setup_vendor_path()
 
-    from calibre_plugins.ell.ell.annotate import AnnotationConfig, Annotator
-    from calibre_plugins.ell.ell.cefr import cefr_cutoff
-    from calibre_plugins.ell.ell.dictionaries import (
+    from ebook_langlearner.annotate import AnnotationConfig, Annotator
+    from ebook_langlearner.cefr import cefr_cutoff
+    from ebook_langlearner.dictionaries import (
         CompositeDictionary,
         DictCCIndex,
         WiktionaryDictionary,
     )
-    from calibre_plugins.ell.ell.dictionaries.download import ensure_wiktionary_index
-    from calibre_plugins.ell.ell.epub_pipeline import annotate_epub
-    from calibre_plugins.ell.ell.render import AnnotationFormat
+    from ebook_langlearner.dictionaries.download import ensure_wiktionary_index
+    from ebook_langlearner.epub_pipeline import annotate_epub
+    from ebook_langlearner.render import AnnotationFormat
 
     source = config["source"]
     target = config["target"]
@@ -368,7 +368,7 @@ def _set_level_job(
     del abort, notifications
     _setup_vendor_path()
 
-    from calibre_plugins.ell.ell.epub_pipeline import set_visible_level
+    from ebook_langlearner.epub_pipeline import set_visible_level
 
     output_path = input_epub.with_suffix(f".{level.lower()}.epub")
     log(f"Switching visible level to {level} → {output_path}")
@@ -386,7 +386,7 @@ def _strip_job(
     del abort, notifications
     _setup_vendor_path()
 
-    from calibre_plugins.ell.ell.epub_pipeline import strip_annotations
+    from ebook_langlearner.epub_pipeline import strip_annotations
 
     output_path = input_epub.with_suffix(".stripped.epub")
     stats = strip_annotations(input_epub, output_path)

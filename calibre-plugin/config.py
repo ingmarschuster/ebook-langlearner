@@ -157,7 +157,7 @@ class ConfigWidget(QWidget):
 
     def _refresh_index_list(self) -> None:
         """Repopulate the ``indexed_list`` widget from the on-disk cache."""
-        from calibre_plugins.ell.ell.dictionaries.dictcc import (
+        from ebook_langlearner.dictionaries.dictcc import (
             dictcc_index_path_for,
             list_indexed_dictcc_pairs,
         )
@@ -185,7 +185,7 @@ class ConfigWidget(QWidget):
         thread would add more risk than it removes.
         """
         _setup_vendor_path()
-        from calibre_plugins.ell.ell.dictionaries.dictcc import build_dictcc_index
+        from ebook_langlearner.dictionaries.dictcc import build_dictcc_index
 
         tsv = self.new_tsv.text().strip()
         if not tsv:
@@ -209,7 +209,7 @@ class ConfigWidget(QWidget):
     def _on_remove_index(self) -> None:
         """Delete the SQLite cache for the selected ``(source, target)`` pair."""
         _setup_vendor_path()
-        from calibre_plugins.ell.ell.dictionaries.dictcc import dictcc_index_path_for
+        from ebook_langlearner.dictionaries.dictcc import dictcc_index_path_for
 
         item = self.indexed_list.currentItem()
         if item is None:

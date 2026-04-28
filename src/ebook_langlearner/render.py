@@ -156,6 +156,7 @@ def build_annotation_css(
         "ruby.ell-annot { ruby-align: center; }\n"
         f"ruby.ell-annot rt.ell-rt {{ font-size: {pct_value}; "
         "opacity: 0.75; line-height: 1; }\n"
-        "span.ell-annot { }\n"
+        "span.ell-annot { font-weight: bold; }\n"
+        "span.ell-annot .ell-trans { font-weight: normal; }\n"
     )
     return base + build_active_level_block(active_level) + "\n"

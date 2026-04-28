@@ -38,7 +38,7 @@ SRC = REPO / "src" / "ebook_langlearner"
 PLUGIN = REPO / "calibre-plugin"
 DIST = REPO / "dist"
 BUILD_DEPS = REPO / "build" / "_deps"
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 CORE_LANGS: frozenset[str] = frozenset({"de", "en", "es", "fr", "it", "nl", "pl", "pt", "sv"})
 
@@ -121,14 +121,16 @@ def _prune_lang_data(directory: Path, suffix: str) -> int:
 
 
 def build_ell() -> None:
-    """Mirror ``src/ebook_langlearner`` into ``calibre-plugin/ell/``.
+    """Vendor ``src/ebook_langlearner`` as ``vendor/ebook_langlearner``.
 
-    Re-creates the ``.gitkeep`` sentinel afterwards so the placeholder that
-    keeps the (otherwise gitignored) directory tracked survives every build.
+    The pipeline uses absolute imports (``from ebook_langlearner.X import
+    Y``) per the project's TID252 ruff rule. To make those imports
+    resolvable from inside the plugin, the source has to be reachable at
+    its real package name on ``sys.path`` — which means vendoring it
+    alongside the third-party packages instead of nesting it under the
+    plugin's ``calibre_plugins.ell`` namespace.
     """
-    dst = PLUGIN / "ell"
-    _copy_tree(SRC, dst)
-    (dst / ".gitkeep").touch()
+    _copy_tree(SRC, PLUGIN / "vendor" / "ebook_langlearner")
 
 
 def build_ebooklib() -> None:
