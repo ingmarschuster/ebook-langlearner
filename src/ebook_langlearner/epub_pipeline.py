@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape as html_escape
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -120,10 +121,15 @@ def _register_stylesheet_link(item: epub.EpubHtml) -> None:
     a stylesheet reference that survives that rebuild. Idempotent: a link
     pointing at the shared filename is added at most once per item.
     """
-    for existing in item.links:
-        if existing.get("href") == STYLESHEET_FILENAME:
-            return
-    item.add_link(href=STYLESHEET_FILENAME, rel="stylesheet", type="text/css")
+    # Compute path relative to this item's location within the epub.
+    # Items in subdirectories (e.g. "text/part0001.html") need "../ell-annotations.css"
+    # rather than "ell-annotations.css", which would resolve to the wrong location.
+    item_dir = PurePosixPath(item.file_name).parent
+    levels_up = len(item_dir.parts) if str(item_dir) != "." else 0
+    href = "../" * levels_up + STYLESHEET_FILENAME
+    if any(lnk.get("href") == href for lnk in item.links):
+        return
+    item.add_link(href=href, rel="stylesheet", type="text/css")
 
 
 def _iter_text_nodes(node: BeautifulSoup | Tag | NavigableString) -> Iterator[NavigableString]:
@@ -239,6 +245,10 @@ def set_visible_level(
     css = style.get_content().decode("utf-8")
     new_css = _rewrite_active_level_block(css, level)
     style.set_content(new_css.encode("utf-8"))
+    # ebooklib drops item.links on read_epub, so the stylesheet link must be
+    # re-registered on every document item before writing.
+    for item in book.get_items_of_type(ITEM_DOCUMENT):
+        _register_stylesheet_link(item)
     epub.write_epub(str(destination), book)
 
 

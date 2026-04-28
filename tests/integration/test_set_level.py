@@ -119,6 +119,22 @@ def test_set_level_raises_on_unannotated_epub(minimal_epub: Path, tmp_path: Path
         set_visible_level(minimal_epub, tmp_path / "x.epub", "A1")
 
 
+def test_set_visible_level_preserves_stylesheet_link(annotated_epub: Path, tmp_path: Path):
+    # Regression: ebooklib drops item.links on read_epub, so set_visible_level
+    # must re-register the stylesheet link before writing or content files lose
+    # their CSS reference entirely.
+    out = tmp_path / "switched.a1.epub"
+    set_visible_level(annotated_epub, out, "A1")
+
+    with zipfile.ZipFile(out) as zf:
+        html_files = [n for n in zf.namelist() if n.endswith((".html", ".xhtml", ".htm"))]
+        contents = [zf.read(n).decode("utf-8") for n in html_files]
+
+    assert any(STYLESHEET_FILENAME in c for c in contents), (
+        "stylesheet link must survive set_visible_level read→write round-trip"
+    )
+
+
 def test_cli_set_level_writes_output(annotated_epub: Path, tmp_path: Path):
     out = tmp_path / "via-cli.a2.epub"
     result = CliRunner().invoke(

@@ -113,12 +113,16 @@ def build_active_level_block(active_level: str) -> str:
     """
     level = normalize_level(active_level)
     revealed = levels_revealed_at(level)
-    selectors = ",\n".join(f".ell-annot.ell-level-{lvl.lower()}" for lvl in revealed)
+    ruby_sel = ",\n".join(
+        f"ruby.ell-annot.ell-level-{lvl.lower()} rt.ell-rt" for lvl in revealed
+    )
+    span_sel = ",\n".join(
+        f"span.ell-annot.ell-level-{lvl.lower()} .ell-trans" for lvl in revealed
+    )
     return (
         f"{_begin_level_marker(level)}\n"
-        ".ell-annot { display: none; }\n"
-        f"{selectors} {{ display: inline; }}\n"
-        ".ell-annot .ell-trans { display: inline; }\n"
+        f"{ruby_sel} {{ display: ruby-text; }}\n"
+        f"{span_sel} {{ display: inline; }}\n"
         f"{END_LEVEL_MARKER}"
     )
 
@@ -155,8 +159,7 @@ def build_annotation_css(
         "body { line-height: 1.7; }\n"
         "ruby.ell-annot { ruby-align: center; }\n"
         f"ruby.ell-annot rt.ell-rt {{ font-size: {pct_value}; "
-        "opacity: 0.75; line-height: 1; }\n"
-        "span.ell-annot { font-weight: bold; }\n"
-        "span.ell-annot .ell-trans { font-weight: normal; }\n"
+        "opacity: 0.75; line-height: 1; display: none; }\n"
+        "span.ell-annot .ell-trans { font-style: italic; display: none; }\n"
     )
     return base + build_active_level_block(active_level) + "\n"

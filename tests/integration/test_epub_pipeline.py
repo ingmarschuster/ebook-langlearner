@@ -109,3 +109,5 @@ def test_custom_ruby_font_pct_propagates_to_stylesheet(
 
     assert "font-size: 72%" in css
     assert "font-size: 90%" not in css
+
+

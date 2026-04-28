@@ -135,6 +135,7 @@ def minimal_epub(tmp_path: Path) -> Path:
     return destination
 
 
+
 @pytest.fixture
 def dictcc_fr_en(tiny_dictcc_file: Path) -> DictCCDictionary:
     """Load the tiny dict.cc fixture as a French→English dictionary."""

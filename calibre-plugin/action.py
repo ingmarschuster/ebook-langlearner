@@ -337,22 +337,10 @@ class EbookLangLearnerAction(InterfaceAction):
             self.gui.library_view.model().refresh_ids([job.book_id])
 
     def _on_annotate_done(self, job: ThreadedJob, output_path: Path) -> None:
-        """Add the freshly-annotated EPUB as a new library entry.
-
-        Adding it as a *new* entry (rather than overwriting the original
-        EPUB format) preserves the unannotated source and surfaces the
-        annotated copy as its own item in the library view, matching
-        user expectations for "process this book".
-        """
-        config: dict = job.config
+        """Replace the book's EPUB format with the annotated version in-place."""
         db = self.gui.current_db.new_api
-        mi = db.get_metadata(job.book_id, get_cover=True, cover_as_data=True)
-        suffix = f"({config['level'].upper()} {config['source']}→{config['target']})"
-        mi.title = f"{mi.title} {suffix}"
-        new_id = db.create_book_entry(mi, add_duplicates=True)
-        db.add_format(new_id, "EPUB", str(output_path), replace=True)
-        self.gui.library_view.model().books_added(1)
-        self.gui.library_view.model().refresh_ids([new_id])
+        db.add_format(job.book_id, "EPUB", str(output_path), replace=True)
+        self.gui.library_view.model().refresh_ids([job.book_id])
 
 
 def _annotate_job(

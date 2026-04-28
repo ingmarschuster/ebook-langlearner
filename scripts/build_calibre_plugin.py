@@ -160,14 +160,15 @@ def build_wordfreq() -> None:
 
 
 def build_wordfreq_deps() -> None:
-    """Vendor wordfreq's transitive runtime deps so worker imports resolve.
+    """Vendor runtime deps that Calibre's bundled Python does not ship.
 
-    ``import wordfreq`` pulls in ``langcodes``, ``msgpack``, ``ftfy``,
-    ``regex`` and ``wcwidth`` at module load time. Calibre's bundled Python
-    has none of these, so the worker fails with ``ModuleNotFoundError`` on
-    the first frequency lookup. The build runs on the user's own machine,
-    so any C extensions copied here (e.g. ``regex``'s ``_regex.*.so``) are
-    built for the same Python ABI Calibre uses.
+    Includes wordfreq's transitive deps (``langcodes``, ``msgpack``, ``ftfy``,
+    ``regex``, ``wcwidth``, ``locate``) plus ``platformdirs`` (used by
+    ``wiktionary.py``) and ``bs4`` / ``beautifulsoup4`` (used by
+    ``epub_pipeline.py``). Calibre provides ``lxml`` and ``soupsieve``, so
+    those are intentionally omitted. C extensions (e.g. ``regex``'s
+    ``_regex.*.so``) are copied from the build machine and must match the
+    Python ABI Calibre embeds.
     """
     for pkg, pip_name in (
         ("langcodes", None),
@@ -175,6 +176,9 @@ def build_wordfreq_deps() -> None:
         ("ftfy", None),
         ("regex", None),
         ("wcwidth", None),
+        ("locate", None),
+        ("platformdirs", None),
+        ("bs4", "beautifulsoup4"),
     ):
         _copy_tree(_ensure_installed(pkg, pip_name=pip_name), PLUGIN / "vendor" / pkg)
 

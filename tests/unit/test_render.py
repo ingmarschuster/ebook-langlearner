@@ -112,3 +112,51 @@ def test_active_level_b1_reveals_b1_b2_c1_c2():
         assert f".ell-annot.ell-level-{hidden} {{" not in block
         assert f".ell-annot.ell-level-{hidden}," not in block
         assert f".ell-annot.ell-level-{hidden}\n" not in block
+
+
+# ── Regression tests for bugs fixed during calibre-plugin development ─────────
+
+def test_active_level_block_does_not_hide_parent_element():
+    # Regression: old code set `.ell-annot { display: none }` which hid the
+    # annotated word itself, not just its translation.
+    block = build_active_level_block("b2")
+    assert ".ell-annot { display: none" not in block
+
+
+def test_active_level_block_ruby_uses_ruby_text_not_inline():
+    # Regression: `display: inline` on a <ruby> breaks rt-above-word layout.
+    block = build_active_level_block("b2")
+    assert "display: ruby-text" in block
+    assert "ruby.ell-annot" in block
+    assert "rt.ell-rt" in block
+
+
+def test_active_level_block_targets_child_translation_elements():
+    # The block must toggle the child rt / .ell-trans, not the parent wrapper.
+    block = build_active_level_block("b2")
+    assert "rt.ell-rt" in block
+    assert ".ell-trans" in block
+
+
+def test_annotation_css_hides_rt_by_default_in_static_rules():
+    # The static (non-rewritable) part of the CSS must default-hide rt so that
+    # hidden-level ruby shows the word but not the translation.
+    css = build_annotation_css()
+    static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
+    assert "rt.ell-rt" in static
+    assert "display: none" in static
+
+
+def test_annotation_css_hides_ell_trans_by_default_in_static_rules():
+    css = build_annotation_css()
+    static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
+    assert ".ell-trans" in static
+    assert "display: none" in static
+
+
+def test_annotation_css_translation_italic_not_word_bold():
+    # Regression: old code bolded the annotated word and set translation to
+    # normal weight. Correct style: translation in italic, word unstyled.
+    css = build_annotation_css()
+    assert "font-style: italic" in css
+    assert "font-weight: bold" not in css
