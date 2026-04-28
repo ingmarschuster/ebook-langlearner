@@ -4,6 +4,11 @@ Subcommands:
 
 * ``languages``               — list supported language codes.
 * ``build-wiktionary-index``  — convert a Kaikki JSONL dump into a SQLite index.
+* ``build-dictcc-index``      — ingest one or more dict.cc TSV exports into a
+  per-language-pair SQLite cache.
+* ``list-dictcc-indexes``     — show the language pairs that have a cached
+  dict.cc index.
+* ``fetch-wiktionary``        — download and index a Kaikki Wiktionary dump.
 * ``annotate``                — annotate an EPUB using configured dictionaries.
 
 Invoke as ``ebook-langlearner <subcommand> ...`` once the package is installed.
@@ -21,8 +26,14 @@ from .annotate import AnnotationConfig, Annotator
 from .cefr import CEFR_LEVELS, cefr_cutoff
 from .dictionaries import (
     CompositeDictionary,
-    DictCCDictionary,
+    DictCCIndex,
     WiktionaryDictionary,
+)
+from .dictionaries.dictcc import (
+    build_dictcc_index,
+    dictcc_index_path_for,
+    ensure_dictcc_index,
+    list_indexed_dictcc_pairs,
 )
 from .dictionaries.download import (
     KAIKKI_LANGUAGE_NAMES,
@@ -176,9 +187,14 @@ def cmd_annotate(
 
     output = output or input_epub.with_suffix(".annotated.epub")
 
-    backends: list[Dictionary] = [
-        DictCCDictionary.from_file(path, source, target) for path in dictcc_paths
-    ]
+    backends: list[Dictionary] = []
+    if dictcc_paths:
+        # Build (or refresh) the cached SQLite for this pair the first time
+        # the user passes a TSV; subsequent runs reuse the cache.
+        ensure_dictcc_index(list(dictcc_paths), source, target)
+    cached_dictcc = DictCCIndex(source, target)
+    if cached_dictcc.is_available:
+        backends.append(cached_dictcc)
 
     if not backends and not no_download and source in KAIKKI_LANGUAGE_NAMES:
         try:
@@ -193,9 +209,10 @@ def cmd_annotate(
 
     if not backends:
         click.echo(
-            "No dictionary backend available. Either provide --dictcc FILE, drop "
-            "--no-download to fetch the Kaikki Wiktionary index automatically, or "
-            f"run 'build-wiktionary-index --source {source} path/to/kaikki.jsonl'.",
+            "No dictionary backend available. Either provide --dictcc FILE (it will be "
+            "indexed once and reused), drop --no-download to fetch the Kaikki Wiktionary "
+            f"index automatically, or run 'build-wiktionary-index --source {source} "
+            "path/to/kaikki.jsonl'.",
             err=True,
         )
         sys.exit(2)
@@ -217,6 +234,48 @@ def cmd_annotate(
         f"Annotated {stats.text_nodes_processed} text nodes across "
         f"{stats.documents_processed} documents → {output}"
     )
+
+
+@main.command("build-dictcc-index")
+@click.option(
+    "--from",
+    "source",
+    required=True,
+    help="Source language code (e.g. fr). Run 'languages' to list supported codes.",
+)
+@click.option(
+    "--to",
+    "target",
+    required=True,
+    help="Target language code (e.g. en). Run 'languages' to list supported codes.",
+)
+@click.argument("tsv", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+def cmd_build_dictcc_index(source: str, target: str, tsv: tuple[Path, ...]) -> None:
+    """Ingest one or more dict.cc TSV exports into the per-pair cache.
+
+    The cache lives under the user's data directory and is consulted
+    automatically by ``annotate`` whenever the requested language pair has
+    a built index. Pass several TSV paths to merge them into a single
+    index; this is the right thing if you have, for example, both the
+    main dict.cc download and a hand-curated supplement.
+    """
+    source = require_supported(source)
+    target = require_supported(target)
+    if source == target:
+        raise click.BadParameter("--from and --to must differ")
+    out = build_dictcc_index(list(tsv), source, target)
+    click.echo(f"Built dict.cc index ({source} → {target}): {out}")
+
+
+@main.command("list-dictcc-indexes")
+def cmd_list_dictcc_indexes() -> None:
+    """Print the language pairs that have a built dict.cc cache."""
+    pairs = list_indexed_dictcc_pairs()
+    if not pairs:
+        click.echo("No dict.cc indexes have been built yet.")
+        return
+    for src, tgt in pairs:
+        click.echo(f"{src} → {tgt}\t{dictcc_index_path_for(src, tgt)}")
 
 
 @main.command("fetch-wiktionary")

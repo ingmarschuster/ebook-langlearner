@@ -165,7 +165,8 @@ def _annotate_job(
     from calibre_plugins.ell.ell.annotate import AnnotationConfig, Annotator
     from calibre_plugins.ell.ell.cefr import cefr_cutoff
     from calibre_plugins.ell.ell.dictionaries import (
-        DictCCDictionary,
+        CompositeDictionary,
+        DictCCIndex,
         WiktionaryDictionary,
     )
     from calibre_plugins.ell.ell.dictionaries.download import ensure_wiktionary_index
@@ -176,17 +177,21 @@ def _annotate_job(
     target = config["target"]
     cutoff = cefr_cutoff(source, config["level"])
 
-    dictcc_path = config.get("dictcc_path") or ""
-    if dictcc_path:
-        dictionary = DictCCDictionary.from_file(Path(dictcc_path), source, target)
+    backends: list = []
+    cached_dictcc = DictCCIndex(source, target)
+    if cached_dictcc.is_available:
+        log(f"Using cached dict.cc index ({source} → {target}) at {cached_dictcc.index_path}")
+        backends.append(cached_dictcc)
     else:
-        log(f"No dict.cc provided — ensuring Wiktionary index for {source!r}")
+        log(f"No cached dict.cc index for {source} → {target}; ensuring Wiktionary fallback")
 
         def _on_progress(stage: str, current: int, total: int | None) -> None:
             _report_download_progress(notifications, log, stage, current, total)
 
         ensure_wiktionary_index(source, progress=_on_progress)
-        dictionary = WiktionaryDictionary(source)
+        backends.append(WiktionaryDictionary(source))
+
+    dictionary = backends[0] if len(backends) == 1 else CompositeDictionary(backends)
 
     annotator = Annotator(
         dictionary,

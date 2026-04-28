@@ -1,9 +1,12 @@
 """Qt dialog for the annotation action.
 
 Prompts the user for source/target language, CEFR level, annotation format,
-a dict.cc TSV file path, and the ruby font-size percent. Returns the
-selection as a dict consumed by
+and the ruby font-size percent. Returns the selection as a dict consumed by
 :func:`calibre_plugins.ell.action._annotate_job`.
+
+dict.cc dictionaries are no longer chosen here — they are ingested once via
+the plugin's *Customize plugin* settings panel and looked up automatically
+by ``(source, target)`` at annotation time.
 
 Uses Calibre's ``qt.core`` shim so the same source works on both Qt5 and
 Qt6 Calibre builds.
@@ -18,11 +21,7 @@ from qt.core import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
-    QFileDialog,
     QFormLayout,
-    QHBoxLayout,
-    QLineEdit,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -64,18 +63,6 @@ class AnnotationDialog(QDialog):
         self.fmt.addItem("Ruby (above the word)", "ruby")
         self.fmt.addItem("Parenthetical (inline)", "parenthetical")
 
-        self.dictcc = QLineEdit()
-        self.dictcc.setPlaceholderText(
-            "Optional — leave blank to auto-download the Wiktionary index."
-        )
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._pick_dictcc)
-        dictcc_row = QHBoxLayout()
-        dictcc_row.addWidget(self.dictcc, 1)
-        dictcc_row.addWidget(browse)
-        dictcc_container = QWidget()
-        dictcc_container.setLayout(dictcc_row)
-
         self.ruby_font_pct = QDoubleSpinBox()
         self.ruby_font_pct.setRange(50.0, 120.0)
         self.ruby_font_pct.setDecimals(0)
@@ -90,7 +77,6 @@ class AnnotationDialog(QDialog):
         form.addRow("To:", self.target)
         form.addRow("CEFR level:", self.level)
         form.addRow("Format:", self.fmt)
-        form.addRow("dict.cc TSV (optional):", dictcc_container)
         form.addRow("Ruby font size:", self.ruby_font_pct)
         layout.addLayout(form)
 
@@ -101,14 +87,6 @@ class AnnotationDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _pick_dictcc(self) -> None:
-        """Open a file picker for the dict.cc TSV export."""
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select dict.cc export", "", "TSV files (*.txt *.tsv);;All files (*)"
-        )
-        if path:
-            self.dictcc.setText(path)
-
     def result_config(self) -> dict:
         """Return the dialog selection as a plain dict the worker can consume."""
         return {
@@ -116,7 +94,6 @@ class AnnotationDialog(QDialog):
             "target": self.target.currentData(),
             "level": self.level.currentData(),
             "format": self.fmt.currentData(),
-            "dictcc_path": self.dictcc.text(),
             "ruby_font_pct": float(self.ruby_font_pct.value()),
         }
 

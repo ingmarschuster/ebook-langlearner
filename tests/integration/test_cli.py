@@ -24,6 +24,26 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+@pytest.fixture
+def isolated_cli_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect the shared cache to the test's tmp_path and return that path.
+
+    The CLI caches dict.cc and Wiktionary indexes under the user cache dir;
+    tests that build or assert on cached files must use this to avoid
+    leaking artifacts into the real user cache.
+    """
+    cache = tmp_path / "user-cache"
+    cache.mkdir()
+    monkeypatch.setattr("ebook_langlearner.dictionaries.wiktionary.cache_dir", lambda: cache)
+    return cache
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_cache(isolated_cli_cache: Path) -> None:
+    """Apply :func:`isolated_cli_cache` to every test in this module."""
+    del isolated_cli_cache
+
+
 def test_annotate_ruby_font_pct_flows_to_stylesheet(
     minimal_epub: Path,
     tiny_dictcc_file: Path,
@@ -199,6 +219,55 @@ def test_annotate_auto_downloads_when_no_dictcc(
     # Fixture got fetched and indexed under the patched cache dir.
     assert (cache / "kaikki-fr.jsonl").exists()
     assert (cache / "wiktionary-fr.sqlite").exists()
+    assert output.exists()
+
+
+def test_build_dictcc_index_caches_and_annotate_reuses_it(
+    minimal_epub: Path,
+    tiny_dictcc_file: Path,
+    tmp_path: Path,
+    isolated_cli_cache: Path,
+):
+    """``build-dictcc-index`` writes the cache; later ``annotate`` reuses it offline."""
+    runner = CliRunner()
+    built = runner.invoke(
+        main,
+        [
+            "build-dictcc-index",
+            "--from",
+            "fr",
+            "--to",
+            "en",
+            str(tiny_dictcc_file),
+        ],
+    )
+    assert built.exit_code == 0, built.output
+    assert (isolated_cli_cache / "dictcc-fr-en.sqlite").exists()
+
+    listed = runner.invoke(main, ["list-dictcc-indexes"])
+    assert listed.exit_code == 0
+    assert "fr → en" in listed.output
+
+    # Second call: annotate without --dictcc and --no-download must succeed
+    # purely from the cached SQLite index.
+    output = tmp_path / "out.epub"
+    annot = runner.invoke(
+        main,
+        [
+            "annotate",
+            str(minimal_epub),
+            "--from",
+            "fr",
+            "--to",
+            "en",
+            "--cutoff",
+            "3.5",
+            "--no-download",
+            "--output",
+            str(output),
+        ],
+    )
+    assert annot.exit_code == 0, annot.output
     assert output.exists()
 
 
