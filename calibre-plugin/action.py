@@ -1,10 +1,15 @@
-"""Library-view action: annotate a selected EPUB.
+"""Library-view action: annotate, switch level, or strip annotations.
 
 This is the runtime :class:`InterfaceAction` Calibre wires up when the user
-adds the plugin. It adds a toolbar button (and context-menu entry) that
-opens the annotation dialog for the currently selected book, runs the
-annotation as a background job, and adds the result as a new book entry
-in the library.
+adds the plugin. The toolbar button opens a small menu with three entries:
+
+* **Annotate** — opens the annotation dialog and runs the pipeline on a
+  worker thread; the result is added to the library as a new book entry.
+* **Change visible level…** — switches the visible CEFR level of an
+  already-annotated EPUB by rewriting only the active-level CSS block;
+  replaces the EPUB format on the same book.
+* **Strip annotations** — removes every annotation from the selected book
+  and replaces its EPUB format with the cleaned copy.
 """
 
 from __future__ import annotations
@@ -43,64 +48,114 @@ class EbookLangLearnerAction(InterfaceAction):
     action_spec = (
         "Annotate for language learners",
         "images/icon.png",
-        "Add inline translations for rare words",
+        "Annotate, switch level, or strip annotations on the selected book",
         None,
     )
     action_type = "current"
 
     def genesis(self) -> None:
-        """Wire the toolbar click to :meth:`open_dialog`.
+        """Build the toolbar menu and wire each entry to its handler.
 
         The icon path in :attr:`action_spec` is resolved by Calibre's
         plugin loader against the zip root, so no manual icon loading is
         needed here.
         """
+        from qt.core import QMenu
+
+        menu = QMenu(self.gui)
+        annotate = menu.addAction("Annotate…")
+        annotate.triggered.connect(self.open_dialog)
+        set_level = menu.addAction("Change visible level…")
+        set_level.triggered.connect(self.open_set_level)
+        strip = menu.addAction("Strip annotations")
+        strip.triggered.connect(self.open_strip)
+        self.qaction.setMenu(menu)
+        # Default click (no menu pop) runs the most common action.
         self.qaction.triggered.connect(self.open_dialog)
 
-    def open_dialog(self) -> None:
-        """Collect the selected book, open the dialog, run the pipeline."""
-        from calibre_plugins.ell.ui import AnnotationDialog
+    def _selected_epub(self) -> tuple[int, Path] | None:
+        """Return ``(book_id, epub_path)`` for the selected book, or warn and return ``None``."""
+        from calibre.gui2 import error_dialog
 
         rows = self.gui.library_view.selectionModel().selectedRows()
         if not rows:
-            from calibre.gui2 import error_dialog
-
             error_dialog(
                 self.gui,
                 "No book selected",
                 "Select a book with an EPUB format first.",
                 show=True,
             )
-            return
+            return None
 
         book_id = self.gui.library_view.model().id(rows[0])
         db = self.gui.current_db.new_api
         abs_path = db.format_abspath(book_id, "EPUB")
         if not abs_path:
-            from calibre.gui2 import error_dialog
-
             error_dialog(
                 self.gui,
                 "No EPUB format",
-                "The selected book has no EPUB format to annotate.",
+                "The selected book has no EPUB format.",
                 show=True,
             )
+            return None
+        return book_id, Path(abs_path)
+
+    def open_dialog(self) -> None:
+        """Collect the selected book, open the annotation dialog, run the pipeline."""
+        from calibre_plugins.ell.ui import AnnotationDialog
+
+        selection = self._selected_epub()
+        if selection is None:
             return
-        epub_path = Path(abs_path)
+        book_id, epub_path = selection
 
         dialog = AnnotationDialog(self.gui, epub_path)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
-        self._run_job(book_id, epub_path, dialog.result_config())
+        self._run_annotate_job(book_id, epub_path, dialog.result_config())
 
-    def _run_job(self, book_id: int, input_epub: Path, config: dict) -> None:
-        """Queue the annotation as a Calibre background job.
+    def open_set_level(self) -> None:
+        """Prompt for a CEFR level and rewrite the EPUB's active-level block."""
+        from qt.core import QInputDialog
 
-        Calibre's job manager handles progress reporting and cancellation;
-        keeping the annotation off the UI thread matters because long books
-        can take 30+ seconds to annotate.
-        """
+        selection = self._selected_epub()
+        if selection is None:
+            return
+        book_id, epub_path = selection
+
+        levels = ("A1", "A2", "B1", "B2", "C1", "C2")
+        level, ok = QInputDialog.getItem(
+            self.gui,
+            "Change visible level",
+            "Visible CEFR level:",
+            list(levels),
+            editable=False,
+        )
+        if not ok or not level:
+            return
+        self._run_set_level_job(book_id, epub_path, level)
+
+    def open_strip(self) -> None:
+        """Strip every annotation from the selected book."""
+        from calibre.gui2 import question_dialog
+
+        selection = self._selected_epub()
+        if selection is None:
+            return
+        book_id, epub_path = selection
+
+        confirm = question_dialog(
+            self.gui,
+            "Strip annotations",
+            "Remove every annotation from this book? The EPUB format will be replaced.",
+        )
+        if not confirm:
+            return
+        self._run_strip_job(book_id, epub_path)
+
+    def _run_annotate_job(self, book_id: int, input_epub: Path, config: dict) -> None:
+        """Queue annotation as a Calibre background job."""
         from calibre.gui2.threaded_jobs import ThreadedJob
 
         job = ThreadedJob(
@@ -112,28 +167,73 @@ class EbookLangLearnerAction(InterfaceAction):
             self._job_done,
             killable=False,
         )
+        job.kind = "annotate"
         job.book_id = book_id
         job.config = config
         self.gui.job_manager.run_threaded_job(job)
 
-    def _job_done(self, job: ThreadedJob) -> None:
-        """Add the annotated EPUB to the library as a new book entry.
+    def _run_set_level_job(self, book_id: int, input_epub: Path, level: str) -> None:
+        """Queue an active-level rewrite as a background job."""
+        from calibre.gui2.threaded_jobs import ThreadedJob
 
-        Adding it as a *new* entry (rather than overwriting the original
-        EPUB format on the source book) preserves the unannotated source
-        and surfaces the annotated copy as its own item in the library
-        view, which matches user expectations for "process this book".
-        """
+        job = ThreadedJob(
+            "ebook_langlearner_set_level",
+            f"Switching visible level to {level} on {input_epub.name}",
+            _set_level_job,
+            (input_epub, level),
+            {},
+            self._job_done,
+            killable=False,
+        )
+        job.kind = "set_level"
+        job.book_id = book_id
+        job.level = level
+        self.gui.job_manager.run_threaded_job(job)
+
+    def _run_strip_job(self, book_id: int, input_epub: Path) -> None:
+        """Queue a strip-annotations job."""
+        from calibre.gui2.threaded_jobs import ThreadedJob
+
+        job = ThreadedJob(
+            "ebook_langlearner_strip",
+            f"Stripping annotations from {input_epub.name}",
+            _strip_job,
+            (input_epub,),
+            {},
+            self._job_done,
+            killable=False,
+        )
+        job.kind = "strip"
+        job.book_id = book_id
+        self.gui.job_manager.run_threaded_job(job)
+
+    def _job_done(self, job: ThreadedJob) -> None:
+        """Dispatch on ``job.kind`` and update the library accordingly."""
         if job.failed:
-            self.gui.job_exception(job, dialog_title="Annotation failed")
+            self.gui.job_exception(job, dialog_title=f"{job.kind} failed".capitalize())
             return
 
         output_path: Path = job.result
-        source_book_id: int = job.book_id
-        config: dict = job.config
+        if job.kind == "annotate":
+            self._on_annotate_done(job, output_path)
+        else:
+            # set-level and strip are in-place operations from the user's
+            # perspective: replace the EPUB format on the existing book.
+            db = self.gui.current_db.new_api
+            db.add_format(job.book_id, "EPUB", str(output_path), replace=True)
+            self.gui.library_view.model().refresh_ids([job.book_id])
 
+    def _on_annotate_done(self, job: ThreadedJob, output_path: Path) -> None:
+        """Add the freshly-annotated EPUB as a new library entry.
+
+        Adding it as a *new* entry (rather than overwriting the original
+        EPUB format) preserves the unannotated source and surfaces the
+        annotated copy as its own item in the library view, matching
+        user expectations for "process this book".
+        """
+        config: dict = job.config
         db = self.gui.current_db.new_api
-        mi = db.get_metadata(source_book_id, get_cover=True, cover_as_data=True)
+        mi = db.get_metadata(job.book_id, get_cover=True, cover_as_data=True)
         suffix = f"({config['level'].upper()} {config['source']}→{config['target']})"
         mi.title = f"{mi.title} {suffix}"
         new_id = db.create_book_entry(mi, add_duplicates=True)
@@ -210,6 +310,46 @@ def _annotate_job(
     )
     output_path = input_epub.with_suffix(f".{config['level']}.annotated.epub")
     annotate_epub(input_epub, output_path, annotator)
+    return output_path
+
+
+def _set_level_job(
+    input_epub: Path,
+    level: str,
+    log: Any,
+    abort: Any,
+    notifications: Any,
+) -> Path:
+    """Rewrite the active-level CSS block on a worker thread."""
+    del abort, notifications
+    _setup_vendor_path()
+
+    from calibre_plugins.ell.ell.epub_pipeline import set_visible_level
+
+    output_path = input_epub.with_suffix(f".{level.lower()}.epub")
+    log(f"Switching visible level to {level} → {output_path}")
+    set_visible_level(input_epub, output_path, level)
+    return output_path
+
+
+def _strip_job(
+    input_epub: Path,
+    log: Any,
+    abort: Any,
+    notifications: Any,
+) -> Path:
+    """Strip every annotation on a worker thread."""
+    del abort, notifications
+    _setup_vendor_path()
+
+    from calibre_plugins.ell.ell.epub_pipeline import strip_annotations
+
+    output_path = input_epub.with_suffix(".stripped.epub")
+    stats = strip_annotations(input_epub, output_path)
+    log(
+        f"Stripped {stats.annotations_removed} annotations across "
+        f"{stats.documents_processed} documents → {output_path}"
+    )
     return output_path
 
 
