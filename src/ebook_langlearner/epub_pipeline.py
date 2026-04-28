@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from bs4 import BeautifulSoup, NavigableString, Tag
 from ebooklib import ITEM_DOCUMENT, epub
 
-from .render import build_ruby_css
+from .render import build_annotation_css
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -74,7 +74,11 @@ def annotate_epub(
         _register_stylesheet_link(item)
         stats.documents_processed += 1
 
-    _add_stylesheet(book, annotator.config.ruby_font_pct)
+    _add_stylesheet(
+        book,
+        ruby_font_pct=annotator.config.ruby_font_pct,
+        active_level=annotator.config.active_level,
+    )
     epub.write_epub(str(destination), book)
     return stats
 
@@ -162,18 +166,22 @@ STYLESHEET_FILENAME = "ell-annotations.css"
 STYLESHEET_ITEM_ID = "ell-annotations-css"
 
 
-def _add_stylesheet(book: epub.EpubBook, ruby_font_pct: float) -> None:
+def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: str) -> None:
     """Attach the shared annotation stylesheet item to the EPUB.
 
     Args:
         book: The EPUB being assembled.
         ruby_font_pct: Ruby translation font-size as a percentage of the base
-            word's font-size; threaded through to :func:`build_ruby_css`.
+            word's font-size; threaded through to :func:`build_annotation_css`.
+        active_level: CEFR level whose annotations are visible by default;
+            baked into the stylesheet's rewrite-target block.
     """
     style = epub.EpubItem(
         uid=STYLESHEET_ITEM_ID,
         file_name=STYLESHEET_FILENAME,
         media_type="text/css",
-        content=build_ruby_css(ruby_font_pct).encode("utf-8"),
+        content=build_annotation_css(ruby_font_pct=ruby_font_pct, active_level=active_level).encode(
+            "utf-8"
+        ),
     )
     book.add_item(style)

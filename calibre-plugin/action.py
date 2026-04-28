@@ -175,7 +175,11 @@ def _annotate_job(
 
     source = config["source"]
     target = config["target"]
-    cutoff = cefr_cutoff(source, config["level"])
+    # The plugin annotates down to the A1 cutoff so a single book can serve
+    # readers at any level; the dialog's "level" selection only controls the
+    # initial visible level baked into the stylesheet.
+    cutoff = cefr_cutoff(source, "A1")
+    active_level = str(config["level"]).upper()
 
     backends: list = []
     cached_dictcc = DictCCIndex(source, target)
@@ -201,6 +205,7 @@ def _annotate_job(
             cutoff=cutoff,
             fmt=AnnotationFormat(config["format"]),
             ruby_font_pct=float(config["ruby_font_pct"]),
+            active_level=active_level,
         ),
     )
     output_path = input_epub.with_suffix(f".{config['level']}.annotated.epub")

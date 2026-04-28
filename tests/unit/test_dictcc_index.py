@@ -81,9 +81,7 @@ def test_build_replaces_existing_index(isolated_cache: Path, tiny_dictcc_file: P
     backend.close()
 
 
-def test_ensure_index_rebuilds_when_tsv_is_newer(
-    isolated_cache: Path, tiny_dictcc_file: Path
-):
+def test_ensure_index_rebuilds_when_tsv_is_newer(isolated_cache: Path, tiny_dictcc_file: Path):
     del isolated_cache
     index = ensure_dictcc_index(tiny_dictcc_file, "fr", "en")
     first_mtime = index.stat().st_mtime
@@ -97,9 +95,7 @@ def test_ensure_index_rebuilds_when_tsv_is_newer(
     assert index.stat().st_mtime >= future
 
 
-def test_ensure_index_skips_rebuild_when_fresh(
-    isolated_cache: Path, tiny_dictcc_file: Path
-):
+def test_ensure_index_skips_rebuild_when_fresh(isolated_cache: Path, tiny_dictcc_file: Path):
     del isolated_cache
     index = ensure_dictcc_index(tiny_dictcc_file, "fr", "en")
     mtime_before = index.stat().st_mtime
@@ -123,9 +119,7 @@ def test_build_merges_multiple_tsvs(isolated_cache: Path, tmp_path: Path):
     backend.close()
 
 
-def test_list_indexed_pairs_finds_built_files(
-    isolated_cache: Path, tiny_dictcc_file: Path
-):
+def test_list_indexed_pairs_finds_built_files(isolated_cache: Path, tiny_dictcc_file: Path):
     del isolated_cache
     assert list_indexed_dictcc_pairs() == []
     build_dictcc_index(tiny_dictcc_file, "fr", "en")
@@ -133,9 +127,7 @@ def test_list_indexed_pairs_finds_built_files(
     assert list_indexed_dictcc_pairs() == [("de", "en"), ("fr", "en")]
 
 
-def test_list_indexed_pairs_ignores_unrelated_files(
-    isolated_cache: Path, tiny_dictcc_file: Path
-):
+def test_list_indexed_pairs_ignores_unrelated_files(isolated_cache: Path, tiny_dictcc_file: Path):
     build_dictcc_index(tiny_dictcc_file, "fr", "en")
     # Drop unrelated files in the cache to ensure the regex is strict.
     (isolated_cache / "wiktionary-fr.sqlite").write_bytes(b"")

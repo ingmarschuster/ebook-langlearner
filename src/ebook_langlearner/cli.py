@@ -101,16 +101,22 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
     type=float,
     default=None,
     help=(
-        "Zipf-frequency cutoff: words below this are annotated. "
-        "Mutually exclusive with --level; defaults to 3.0 if neither is given."
+        "Zipf-frequency cutoff: words strictly below this get tagged. "
+        "Defaults to the A1 cutoff for the source language, so every word "
+        "an A1 learner would want is annotated; pass a lower value to "
+        "limit annotations to rarer words."
     ),
 )
 @click.option(
     "--level",
     type=click.Choice(CEFR_LEVELS, case_sensitive=False),
-    default=None,
-    help="CEFR level of the reader; derives a per-language cutoff. "
-    "Mutually exclusive with --cutoff.",
+    default="B2",
+    show_default=True,
+    help=(
+        "CEFR level whose annotations are visible by default. Words at all "
+        "levels are still tagged; this only chooses which the reader sees. "
+        "Switch later with 'set-level' without re-annotating."
+    ),
 )
 @click.option(
     "--format",
@@ -158,7 +164,7 @@ def cmd_annotate(
     source: str,
     target: str,
     cutoff: float | None,
-    level: str | None,
+    level: str,
     fmt: str,
     dictcc_paths: tuple[Path, ...],
     *,
@@ -177,13 +183,14 @@ def cmd_annotate(
     target = require_supported(target)
     if source == target:
         raise click.BadParameter("--from and --to must differ")
-    if cutoff is not None and level is not None:
-        raise click.BadParameter("--cutoff and --level are mutually exclusive")
-    if level is not None:
-        cutoff = cefr_cutoff(source, level)
-        click.echo(f"CEFR {level.upper()} → Zipf cutoff {cutoff:.2f} for {source!r}")
-    elif cutoff is None:
-        cutoff = 3.0
+    a1_cutoff = cefr_cutoff(source, "A1")
+    if cutoff is None:
+        cutoff = a1_cutoff
+    active_level = level.upper()
+    click.echo(
+        f"Tagging words below Zipf {cutoff:.2f} for {source!r}; "
+        f"visible level: {active_level} (A1 cutoff {a1_cutoff:.2f})"
+    )
 
     output = output or input_epub.with_suffix(".annotated.epub")
 
@@ -227,6 +234,7 @@ def cmd_annotate(
             cutoff=cutoff,
             fmt=AnnotationFormat(fmt),
             ruby_font_pct=ruby_font_pct,
+            active_level=active_level,
         ),
     )
     stats = annotate_epub(input_epub, output, annotator)

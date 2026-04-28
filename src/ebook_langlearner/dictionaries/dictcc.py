@@ -136,9 +136,7 @@ def build_dictcc_index(
     try:
         conn.execute("PRAGMA journal_mode=OFF")
         conn.execute("PRAGMA synchronous=OFF")
-        conn.execute(
-            "CREATE TABLE entries (word_norm TEXT NOT NULL, translation TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE entries (word_norm TEXT NOT NULL, translation TEXT NOT NULL)")
         for path in tsv_paths:
             conn.executemany(
                 "INSERT INTO entries(word_norm, translation) VALUES(?, ?)",
