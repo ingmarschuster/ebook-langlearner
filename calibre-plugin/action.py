@@ -26,19 +26,24 @@ if TYPE_CHECKING:
     from calibre.gui2.threaded_jobs import ThreadedJob
 
 
-def _setup_vendor_path() -> None:
-    """Prepend the plugin's ``vendor/`` directory to ``sys.path``.
+_VENDOR_STATE: dict[str, Path | None] = {"dir": None}
 
-    The annotation pipeline imports ``ebooklib``, ``simplemma`` and
-    ``wordfreq`` as top-level packages; those are vendored inside the
-    plugin zip but Calibre's plugin import hook only resolves the
-    ``calibre_plugins.<name>.*`` namespace, not arbitrary subdirs. This
-    inserts ``vendor/`` once so the absolute imports inside ``ell/`` keep
-    working unmodified — the source ships unforked between CLI and plugin.
+
+def _setup_vendor_path() -> None:
+    """Insert the extracted vendor directory onto ``sys.path``.
+
+    Idempotent. The path itself is populated by
+    :meth:`EbookLangLearnerAction._extract_vendor` at plugin genesis;
+    calling this from a worker is just an inexpensive belt-and-braces
+    insert in case the worker thread observes ``sys.path`` before the
+    GUI thread's setup propagates.
     """
-    vendor_dir = str(Path(__file__).resolve().parent / "vendor")
-    if Path(vendor_dir).is_dir() and vendor_dir not in sys.path:
-        sys.path.insert(0, vendor_dir)
+    vendor_dir = _VENDOR_STATE["dir"]
+    if vendor_dir is None:
+        return
+    vendor_str = str(vendor_dir)
+    if vendor_str not in sys.path:
+        sys.path.insert(0, vendor_str)
 
 
 class EbookLangLearnerAction(InterfaceAction):
@@ -54,7 +59,7 @@ class EbookLangLearnerAction(InterfaceAction):
     action_type = "current"
 
     def genesis(self) -> None:
-        """Build the toolbar menu, load the plugin icon, and wire handlers.
+        """Extract vendored deps, build the toolbar menu, load the icon.
 
         ``action_spec``'s icon slot only resolves Calibre's built-in icon
         names (via ``I(...)``); custom plugin icons must be loaded from the
@@ -63,6 +68,8 @@ class EbookLangLearnerAction(InterfaceAction):
         """
         from calibre_plugins.ell import get_icons
         from qt.core import QMenu
+
+        self._extract_vendor()
 
         icon = get_icons("images/icon.png")
         if icon is not None and not icon.isNull():
@@ -78,6 +85,37 @@ class EbookLangLearnerAction(InterfaceAction):
         self.qaction.setMenu(menu)
         # Default click (no menu pop) runs the most common action.
         self.qaction.triggered.connect(self.open_dialog)
+
+    def _extract_vendor(self) -> None:
+        """Extract the plugin's vendored deps to a stable on-disk cache.
+
+        The plugin zip ships ``ebooklib``, ``simplemma`` and ``wordfreq``
+        under ``vendor/`` as top-level packages. Calibre's zipplugin loader
+        only resolves the ``calibre_plugins.<name>`` namespace, and
+        ``Path(__file__).parent / "vendor"`` from inside the zip yields a
+        path that doesn't exist on disk — so an in-zip ``sys.path`` insert
+        never made these packages importable. We extract the ``vendor/``
+        subtree once per plugin version into Calibre's config dir; later
+        Calibre launches reuse the cache and skip re-extraction.
+        """
+        import zipfile
+
+        from calibre.constants import config_dir
+
+        plugin = self.interface_action_base_plugin
+        plugin_path = plugin.plugin_path
+        if plugin_path is None:
+            return
+        version_str = ".".join(str(p) for p in plugin.version)
+        cache_root = Path(config_dir) / "plugins" / f"ebook-langlearner-vendor-{version_str}"
+        if not cache_root.is_dir():
+            cache_root.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(plugin_path) as zf:
+                for member in zf.namelist():
+                    if member.startswith("vendor/") and not member.endswith("/"):
+                        zf.extract(member, cache_root)
+        _VENDOR_STATE["dir"] = cache_root / "vendor"
+        _setup_vendor_path()
 
     def _selected_epub(self) -> tuple[int, Path] | None:
         """Return ``(book_id, epub_path)`` for the selected book, or warn and return ``None``."""
