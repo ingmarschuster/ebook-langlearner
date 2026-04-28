@@ -23,6 +23,7 @@ Run via ``uv run python scripts/build_calibre_plugin.py``.
 
 from __future__ import annotations
 
+import argparse
 import ctypes.util
 import importlib
 import importlib.util
@@ -298,8 +299,62 @@ def write_zip() -> Path:
     return out
 
 
-def main() -> int:
+_CALIBRE_CUSTOMIZE_FALLBACKS = (
+    "/Applications/calibre.app/Contents/MacOS/calibre-customize",
+    "/Applications/calibre.app/Contents/console.app/Contents/MacOS/calibre-customize",
+)
+
+
+def _calibre_customize() -> str | None:
+    """Locate the ``calibre-customize`` binary, preferring the one on PATH."""
+    found = shutil.which("calibre-customize")
+    if found is not None:
+        return found
+    return next((p for p in _CALIBRE_CUSTOMIZE_FALLBACKS if Path(p).is_file()), None)
+
+
+def install_into_calibre(plugin_zip: Path) -> int:
+    """Hand ``plugin_zip`` to ``calibre-customize`` for installation.
+
+    Calibre must be closed before running this — ``calibre-customize`` writes
+    into ``~/Library/Preferences/calibre/plugins`` (macOS) or
+    ``~/.config/calibre/plugins`` (Linux), and a running Calibre will not pick
+    up the new bits until restart.
+    """
+    binary = _calibre_customize()
+    if binary is None:
+        print(
+            "  install: 'calibre-customize' not found on PATH. "
+            "On macOS, /Applications/calibre.app/Contents/MacOS/calibre-customize "
+            "is the usual location.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"  install: {binary} --add-plugin {plugin_zip.relative_to(REPO)}")
+    result = subprocess.run([binary, "--add-plugin", str(plugin_zip)], check=False)
+    if result.returncode != 0:
+        print(
+            "  install: calibre-customize failed; make sure Calibre is fully quit before retrying.",
+            file=sys.stderr,
+        )
+    return result.returncode
+
+
+def main(argv: list[str] | None = None) -> int:
     """Run the full build and report the final zip path and size."""
+    parser = argparse.ArgumentParser(
+        description="Build (and optionally install) the Calibre plugin."
+    )
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help=(
+            "After building, register the zip with the local Calibre install via "
+            "'calibre-customize --add-plugin'. Calibre must be closed first."
+        ),
+    )
+    args = parser.parse_args(argv)
+
     _ensure_libcairo_loadable()
     print("Building Calibre plugin payload...")
     build_ell()
@@ -311,6 +366,8 @@ def main() -> int:
     out = write_zip()
     size_mb = out.stat().st_size / (1024 * 1024)
     print(f"\nWrote {out.relative_to(REPO)} ({size_mb:.1f} MB)")
+    if args.install:
+        return install_into_calibre(out)
     return 0
 
 
