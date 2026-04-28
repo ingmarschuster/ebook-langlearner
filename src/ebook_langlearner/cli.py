@@ -10,6 +10,10 @@ Subcommands:
   dict.cc index.
 * ``fetch-wiktionary``        — download and index a Kaikki Wiktionary dump.
 * ``annotate``                — annotate an EPUB using configured dictionaries.
+* ``set-level``               — switch the visible CEFR level of an annotated
+  EPUB without re-annotating it.
+* ``strip-annotations``       — remove every annotation, recovering the
+  original prose.
 
 Invoke as ``ebook-langlearner <subcommand> ...`` once the package is installed.
 """
@@ -41,7 +45,12 @@ from .dictionaries.download import (
     ensure_wiktionary_index,
 )
 from .dictionaries.wiktionary import build_index, index_path_for
-from .epub_pipeline import annotate_epub
+from .epub_pipeline import (
+    MissingStylesheetError,
+    annotate_epub,
+    set_visible_level,
+    strip_annotations,
+)
 from .languages import CORE_LANGUAGES, require_supported
 from .render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat
 
@@ -284,6 +293,64 @@ def cmd_list_dictcc_indexes() -> None:
         return
     for src, tgt in pairs:
         click.echo(f"{src} → {tgt}\t{dictcc_index_path_for(src, tgt)}")
+
+
+@main.command("set-level")
+@click.argument("input_epub", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--level",
+    type=click.Choice(CEFR_LEVELS, case_sensitive=False),
+    required=True,
+    help="CEFR level to make visible (case-insensitive).",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output EPUB path. Defaults to <input>.<level>.epub.",
+)
+def cmd_set_level(input_epub: Path, level: str, output: Path | None) -> None:
+    """Switch the visible CEFR level of an annotated EPUB.
+
+    The book's annotations are tagged at every level when produced; this
+    command rewrites only the active-level CSS block so a different level
+    becomes visible. Switching is fast and lossless — no re-annotation, no
+    dictionary lookups.
+    """
+    lower = level.lower()
+    output = output or input_epub.with_suffix(f".{lower}.epub")
+    try:
+        set_visible_level(input_epub, output, level)
+    except MissingStylesheetError as exc:
+        click.echo(f"Cannot switch level: {exc}", err=True)
+        click.echo(
+            "Re-annotate the book with this version of ebook-langlearner first.",
+            err=True,
+        )
+        sys.exit(2)
+    click.echo(f"Visible level switched to {level.upper()} → {output}")
+
+
+@main.command("strip-annotations")
+@click.argument("input_epub", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output EPUB path. Defaults to <input>.stripped.epub.",
+)
+def cmd_strip_annotations(input_epub: Path, output: Path | None) -> None:
+    """Remove every annotation from an EPUB, recovering the original prose.
+
+    Drops the bundled annotation stylesheet and unwraps every ``ell-annot``
+    element so the resulting EPUB reads like the unannotated source.
+    """
+    output = output or input_epub.with_suffix(".stripped.epub")
+    stats = strip_annotations(input_epub, output)
+    click.echo(
+        f"Stripped {stats.annotations_removed} annotations across "
+        f"{stats.documents_processed} documents → {output}"
+    )
 
 
 @main.command("fetch-wiktionary")

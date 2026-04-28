@@ -16,7 +16,13 @@ from typing import TYPE_CHECKING
 from bs4 import BeautifulSoup, NavigableString, Tag
 from ebooklib import ITEM_DOCUMENT, epub
 
-from .render import build_annotation_css
+from .render import (
+    BEGIN_LEVEL_MARKER_PREFIX,
+    BEGIN_LEVEL_MARKER_SUFFIX,
+    END_LEVEL_MARKER,
+    build_active_level_block,
+    build_annotation_css,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -185,3 +191,189 @@ def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: 
         ),
     )
     book.add_item(style)
+
+
+class MissingStylesheetError(RuntimeError):
+    """Raised when ``set-level`` cannot find the annotation stylesheet markers.
+
+    The EPUB either wasn't produced by this tool or its CSS was rewritten by
+    hand. Re-running :func:`annotate_epub` regenerates the marker block.
+    """
+
+
+def _find_stylesheet_item(book: epub.EpubBook) -> epub.EpubItem | None:
+    """Return the bundled annotation stylesheet item, or ``None`` if missing."""
+    for item in book.get_items():
+        if item.file_name.endswith(STYLESHEET_FILENAME):
+            return item
+    return None
+
+
+def set_visible_level(
+    source: Path | str,
+    destination: Path | str,
+    level: str,
+) -> None:
+    """Rewrite the active-level CSS block of an annotated EPUB.
+
+    The annotation stylesheet contains a marker-bracketed block that decides
+    which CEFR levels are visible. Switching levels is therefore a CSS rewrite
+    rather than a re-annotation: every word's ``ell-level-{lvl}`` class is
+    already in place, the only change is which selectors are unhidden.
+
+    Args:
+        source: Path to a previously annotated EPUB.
+        destination: Where to write the level-switched copy. Overwritten if it
+            exists.
+        level: CEFR level to make visible (case-insensitive).
+
+    Raises:
+        MissingStylesheetError: If ``source`` lacks the annotation stylesheet
+            or its rewrite-target markers (e.g. produced by an older build).
+    """
+    book = epub.read_epub(str(source))
+    style = _find_stylesheet_item(book)
+    if style is None:
+        msg = f"Annotation stylesheet {STYLESHEET_FILENAME!r} not found in {source!s}"
+        raise MissingStylesheetError(msg)
+    css = style.get_content().decode("utf-8")
+    new_css = _rewrite_active_level_block(css, level)
+    style.set_content(new_css.encode("utf-8"))
+    epub.write_epub(str(destination), book)
+
+
+def _rewrite_active_level_block(css: str, level: str) -> str:
+    """Replace the marker-bracketed block in ``css`` with one keyed by ``level``.
+
+    Raises:
+        MissingStylesheetError: When either marker line is missing.
+    """
+    begin_index = css.find(BEGIN_LEVEL_MARKER_PREFIX)
+    end_index = css.find(END_LEVEL_MARKER)
+    if begin_index == -1 or end_index == -1 or end_index <= begin_index:
+        msg = "Annotation stylesheet is missing the active-level rewrite markers."
+        raise MissingStylesheetError(msg)
+    end_of_old_block = end_index + len(END_LEVEL_MARKER)
+    return css[:begin_index] + build_active_level_block(level) + css[end_of_old_block:]
+
+
+@dataclass
+class StripStats:
+    """Counters returned by :func:`strip_annotations`.
+
+    Attributes:
+        documents_processed: XHTML content documents visited.
+        annotations_removed: Total ``ell-annot`` elements unwrapped.
+    """
+
+    documents_processed: int = 0
+    annotations_removed: int = 0
+
+
+def strip_annotations(
+    source: Path | str,
+    destination: Path | str,
+) -> StripStats:
+    """Remove every annotation from an EPUB, recovering the original prose.
+
+    Walks each XHTML document and replaces every ``ruby.ell-annot`` /
+    ``span.ell-annot`` with its base word, drops the bundled stylesheet
+    item, and removes its ``<link>`` from each document.
+
+    Args:
+        source: Path to an annotated EPUB.
+        destination: Where to write the stripped copy.
+
+    Returns:
+        Counters summarizing what was removed.
+    """
+    book = epub.read_epub(str(source))
+    stats = StripStats()
+    for item in list(book.get_items_of_type(ITEM_DOCUMENT)):
+        original_html = item.get_content().decode("utf-8")
+        new_html, removed = _strip_document(original_html)
+        if removed:
+            item.set_content(new_html.encode("utf-8"))
+            stats.annotations_removed += removed
+        _unregister_stylesheet_link(item)
+        stats.documents_processed += 1
+
+    style = _find_stylesheet_item(book)
+    if style is not None:
+        _remove_item(book, style)
+
+    epub.write_epub(str(destination), book)
+    return stats
+
+
+def _strip_document(html: str) -> tuple[str, int]:
+    """Remove every ell-annot element from ``html``; return ``(new_html, count)``.
+
+    For ruby annotations the ``rt``/``rp`` children are dropped and the rest
+    is unwrapped. For parenthetical annotations the ``span.ell-trans`` child
+    is removed and the outer span unwrapped. The result is the bare base word
+    in the same position as the original annotated form.
+
+    BeautifulSoup's ``find_all(class_=...)`` shortcut is HTML-only — under
+    the ``lxml-xml`` parser it never matches. We use the CSS selector form
+    which works under both parsers.
+    """
+    soup = BeautifulSoup(html, "lxml-xml")
+    removed = 0
+    for tag in list(soup.select(".ell-annot")):
+        if not isinstance(tag, Tag):
+            continue
+        for inner in list(tag.select("rt, rp, .ell-trans")):
+            inner.decompose()
+        tag.unwrap()
+        removed += 1
+    return str(soup), removed
+
+
+def _unregister_stylesheet_link(item: epub.EpubHtml) -> None:
+    """Remove every link to :data:`STYLESHEET_FILENAME` from ``item.links``."""
+    item.links = [link for link in item.links if link.get("href") != STYLESHEET_FILENAME]
+
+
+def _remove_item(book: epub.EpubBook, target: epub.EpubItem) -> None:
+    """Remove ``target`` from the book and its spine, if present.
+
+    ebooklib doesn't expose a public removal helper, so we mutate the
+    underlying ``items`` list and ``spine`` directly. The spine cleanup is
+    defensive — annotation stylesheets are not normally spine entries, but
+    a future change could add them and we don't want to leave a dangling
+    reference behind.
+    """
+    book.items = [item for item in book.items if item is not target]
+    book.spine = [entry for entry in book.spine if not _spine_refers_to(entry, target)]
+
+
+def _spine_refers_to(entry: object, target: epub.EpubItem) -> bool:
+    """Return whether a ``book.spine`` entry points to ``target``."""
+    ref = entry[0] if isinstance(entry, tuple) else entry
+    return ref in (target.id, target.file_name)
+
+
+def get_active_level(source: Path | str) -> str | None:
+    """Return the visible CEFR level baked into ``source``'s stylesheet.
+
+    Args:
+        source: Path to an annotated EPUB.
+
+    Returns:
+        The uppercase CEFR level string parsed out of the BEGIN marker, or
+        ``None`` when the stylesheet is missing or unrecognized.
+    """
+    book = epub.read_epub(str(source))
+    style = _find_stylesheet_item(book)
+    if style is None:
+        return None
+    css = style.get_content().decode("utf-8")
+    begin = css.find(BEGIN_LEVEL_MARKER_PREFIX)
+    if begin == -1:
+        return None
+    after_prefix = begin + len(BEGIN_LEVEL_MARKER_PREFIX)
+    end = css.find(BEGIN_LEVEL_MARKER_SUFFIX, after_prefix)
+    if end == -1:
+        return None
+    return css[after_prefix:end].strip().upper()
