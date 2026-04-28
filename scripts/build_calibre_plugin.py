@@ -23,6 +23,7 @@ Run via ``uv run python scripts/build_calibre_plugin.py``.
 
 from __future__ import annotations
 
+import ctypes
 import importlib
 import importlib.util
 import shutil
@@ -154,14 +155,47 @@ def build_wordfreq() -> None:
     print(f"  wordfreq: pruned {n} non-core msgpack files")
 
 
+_LIBCAIRO_CANDIDATES = (
+    "/opt/homebrew/lib/libcairo.2.dylib",
+    "/usr/local/lib/libcairo.2.dylib",
+    "/usr/lib/x86_64-linux-gnu/libcairo.so.2",
+    "/usr/lib/aarch64-linux-gnu/libcairo.so.2",
+    "/usr/lib64/libcairo.so.2",
+)
+
+
+def _preload_libcairo() -> bool:
+    """Pre-load libcairo from a known location so cairocffi can find it.
+
+    miniforge/conda Pythons on macOS do not search ``/opt/homebrew/lib`` by
+    default, so even after ``brew install cairo`` cairocffi's bare-name
+    ``dlopen`` fails. Loading the library at an absolute path via
+    :mod:`ctypes` registers it with the dynamic linker; cairocffi's
+    subsequent leaf-name lookup then resolves to the already-loaded handle.
+    Returns ``True`` if a candidate was loaded, ``False`` otherwise.
+    """
+    for path in _LIBCAIRO_CANDIDATES:
+        if not Path(path).is_file():
+            continue
+        try:
+            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+        except OSError:
+            continue
+        return True
+    return False
+
+
 def build_icon() -> None:
     """Render ``calibre-plugin/icon.svg`` to a 48 px ``images/icon.png``.
 
     Pip-installs ``cairosvg`` into ``build/_deps`` on demand if it is not
     already importable, so a clean checkout produces a real raster icon
-    without manual setup. If the source SVG is missing the build skips the
-    step; the plugin still works without an icon (Calibre falls back to a
-    generic puzzle-piece glyph).
+    without manual setup. ``cairosvg`` needs the native ``libcairo`` library
+    at runtime; we probe the well-known Homebrew and Linux distro paths and
+    pre-load it via :mod:`ctypes` so it is visible even from a miniforge or
+    conda Python whose dyld search path does not include them. If neither
+    that probe nor cairocffi's own search succeeds we abort with a one-line
+    install hint.
     """
     svg = PLUGIN / "icon.svg"
     out_dir = PLUGIN / "images"
@@ -171,6 +205,7 @@ def build_icon() -> None:
         print("  icon: icon.svg missing, skipping")
         return
     _ensure_installed("cairosvg")
+    _preload_libcairo()
     try:
         cairosvg = importlib.import_module("cairosvg")
     except OSError as exc:
