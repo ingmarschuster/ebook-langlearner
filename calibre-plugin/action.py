@@ -47,20 +47,26 @@ class EbookLangLearnerAction(InterfaceAction):
     name = "ebook-langlearner"
     action_spec = (
         "Annotate for language learners",
-        "images/icon.png",
+        None,
         "Annotate, switch level, or strip annotations on the selected book",
         None,
     )
     action_type = "current"
 
     def genesis(self) -> None:
-        """Build the toolbar menu and wire each entry to its handler.
+        """Build the toolbar menu, load the plugin icon, and wire handlers.
 
-        The icon path in :attr:`action_spec` is resolved by Calibre's
-        plugin loader against the zip root, so no manual icon loading is
-        needed here.
+        ``action_spec``'s icon slot only resolves Calibre's built-in icon
+        names (via ``I(...)``); custom plugin icons must be loaded from the
+        zip via ``get_icons``. We do that here and call ``setIcon`` on the
+        toolbar action so the toolbar/menu entry actually shows the glyph.
         """
+        from calibre_plugins.ell import get_icons
         from qt.core import QMenu
+
+        icon = get_icons("images/icon.png")
+        if icon is not None and not icon.isNull():
+            self.qaction.setIcon(icon)
 
         menu = QMenu(self.gui)
         annotate = menu.addAction("Annotate…")
