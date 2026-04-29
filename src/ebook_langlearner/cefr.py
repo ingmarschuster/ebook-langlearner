@@ -15,7 +15,7 @@ under-annotate some languages and over-annotate others.
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+from functools import cache, lru_cache
 from importlib import resources
 
 from .languages import require_supported
@@ -85,3 +85,71 @@ def cefr_cutoff(lang: str, level: str) -> float:
     lang = require_supported(lang)
     level = normalize_level(level)
     return _load_cutoffs()[lang][level]
+
+
+@cache
+def _levels_with_cutoffs(lang: str) -> tuple[tuple[str, float], ...]:
+    """Return ``((level, cutoff), …)`` for ``lang`` sorted by cutoff descending.
+
+    A1 has the largest cutoff and C2 the smallest, so iterating this tuple
+    walks the levels from most permissive to most restrictive.
+    """
+    lang = require_supported(lang)
+    table = _load_cutoffs()[lang]
+    return tuple(sorted(table.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def level_for_zipf(lang: str, zipf_value: float) -> str | None:
+    """Return the CEFR level that "owns" a word with Zipf ``zipf_value``.
+
+    A word is owned by the *most restrictive* level whose cutoff is still
+    strictly greater than ``zipf_value`` — equivalently, the smallest cutoff
+    that would still annotate this word. A learner at that level (or any
+    more permissive one) needs the annotation; a stricter learner already
+    knows the word.
+
+    Args:
+        lang: Source language code (case-insensitive).
+        zipf_value: Lemma-aggregated Zipf frequency of the word.
+
+    Returns:
+        The owning CEFR level (uppercase, e.g. ``"B1"``), or ``None`` when
+        no level's cutoff exceeds ``zipf_value`` (the word is common enough
+        that even the most permissive level — A1 — doesn't annotate it).
+    """
+    candidate: str | None = None
+    for level, cutoff in _levels_with_cutoffs(lang):
+        if cutoff > zipf_value:
+            candidate = level
+    return candidate
+
+
+def levels_revealed_at(active_level: str) -> tuple[str, ...]:
+    """Return the CEFR levels whose annotations should be visible at ``active_level``.
+
+    A learner at ``active_level`` sees annotations for every word their level
+    *or* a stricter (rarer-targeting) level would annotate — i.e. every level
+    in :data:`CEFR_LEVELS` from ``active_level`` upward. A1 reveals all six
+    levels; C2 reveals only itself.
+
+    Args:
+        active_level: CEFR level string (case-insensitive).
+
+    Returns:
+        Tuple of CEFR levels (uppercase) in canonical A1→C2 order.
+    """
+    active = normalize_level(active_level)
+    start = CEFR_LEVELS.index(active)
+    return CEFR_LEVELS[start:]
+
+
+def level_class(level: str) -> str:
+    """Return the CSS class suffix for a CEFR ``level``.
+
+    Args:
+        level: CEFR level string (case-insensitive).
+
+    Returns:
+        The class name, e.g. ``"ell-level-b2"``.
+    """
+    return f"ell-level-{normalize_level(level).lower()}"

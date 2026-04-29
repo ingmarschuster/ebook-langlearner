@@ -22,6 +22,13 @@ build/
 .cache/
 /cache/
 
+# Calibre plugin: vendor/ and images/icon.png are populated at build time,
+# not by hand. Keep the README.md placeholder so the otherwise-empty
+# vendor/ directory stays tracked.
+calibre-plugin/vendor/*
+!calibre-plugin/vendor/README.md
+calibre-plugin/images/icon.png
+
 # Node / Playwright
 node_modules/
 playwright-report/

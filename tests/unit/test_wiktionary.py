@@ -19,12 +19,8 @@ def test_lookup_returns_translations_for_target_language(
 
 def test_lookup_filters_by_target_language(wiktionary_fr: WiktionaryDictionary):
     # "aubépine" has EN and DE translations in the fixture.
-    en = wiktionary_fr.candidates(
-        LookupKey(lemma="aubépine", source_lang="fr", target_lang="en")
-    )
-    de = wiktionary_fr.candidates(
-        LookupKey(lemma="aubépine", source_lang="fr", target_lang="de")
-    )
+    en = wiktionary_fr.candidates(LookupKey(lemma="aubépine", source_lang="fr", target_lang="en"))
+    de = wiktionary_fr.candidates(LookupKey(lemma="aubépine", source_lang="fr", target_lang="de"))
     assert en == ["hawthorn"]
     assert de == ["Weißdorn"]
 
@@ -32,9 +28,7 @@ def test_lookup_filters_by_target_language(wiktionary_fr: WiktionaryDictionary):
 def test_missing_source_language_returns_empty(wiktionary_fr: WiktionaryDictionary):
     # The dictionary is French-source; asking for an English lemma returns [].
     assert (
-        wiktionary_fr.candidates(
-            LookupKey(lemma="hawthorn", source_lang="en", target_lang="de")
-        )
+        wiktionary_fr.candidates(LookupKey(lemma="hawthorn", source_lang="en", target_lang="de"))
         == []
     )
 
@@ -43,7 +37,4 @@ def test_missing_index_file_keeps_dictionary_unavailable(tmp_path):
     nonexistent = tmp_path / "does-not-exist.sqlite"
     dictionary = WiktionaryDictionary("fr", index_path=nonexistent)
     assert not dictionary.is_available
-    assert (
-        dictionary.candidates(LookupKey(lemma="x", source_lang="fr", target_lang="en"))
-        == []
-    )
+    assert dictionary.candidates(LookupKey(lemma="x", source_lang="fr", target_lang="en")) == []

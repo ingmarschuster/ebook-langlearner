@@ -8,6 +8,9 @@ from ebook_langlearner.cefr import (
     CEFR_LEVELS,
     UnknownCEFRLevelError,
     cefr_cutoff,
+    level_class,
+    level_for_zipf,
+    levels_revealed_at,
     normalize_level,
 )
 from ebook_langlearner.languages import CORE_LANGUAGES, UnsupportedLanguageError
@@ -51,3 +54,36 @@ def test_unsupported_language_raises():
 
 def test_normalize_level_roundtrip():
     assert normalize_level("b2") == "B2"
+
+
+def test_level_for_zipf_returns_none_above_a1_cutoff():
+    a1 = cefr_cutoff("fr", "A1")
+    # Strictly above the A1 cutoff: a learner at any level already knows it.
+    assert level_for_zipf("fr", a1 + 0.5) is None
+    assert level_for_zipf("fr", a1) is None  # boundary: strict-greater-than
+
+
+def test_level_for_zipf_picks_smallest_cutoff_still_greater():
+    # A word at Zipf 4.5 in fr: cutoffs that exceed it are A1 (5.07), A2
+    # (4.78) and B1 (4.515); the most-restrictive of those is B1.
+    assert level_for_zipf("fr", 4.5) == "B1"
+    # Very rare word: only C2 (3.266) still exceeds 0.0, so the word is
+    # owned by C2.
+    assert level_for_zipf("fr", 0.0) == "C2"
+
+
+def test_levels_revealed_at_a1_includes_all():
+    assert levels_revealed_at("a1") == CEFR_LEVELS
+
+
+def test_levels_revealed_at_c2_only_includes_c2():
+    assert levels_revealed_at("C2") == ("C2",)
+
+
+def test_levels_revealed_at_b2_includes_b2_and_rarer():
+    assert levels_revealed_at("b2") == ("B2", "C1", "C2")
+
+
+def test_level_class_lowercases():
+    assert level_class("B2") == "ell-level-b2"
+    assert level_class("c1") == "ell-level-c1"

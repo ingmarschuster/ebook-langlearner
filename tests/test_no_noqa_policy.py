@@ -11,7 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-SCAN_DIRS = ("src", "tests", "scripts")
+SCAN_DIRS = ("src", "tests", "scripts", "calibre-plugin")
 
 FORBIDDEN_PATTERNS = {
     "noqa": re.compile(r"#\s*noqa\b", re.IGNORECASE),
@@ -30,12 +30,23 @@ ALLOWED_FILES = frozenset(
 )
 
 
+SKIP_DIR_PARTS = frozenset({"vendor"})
+"""Directory names anywhere in the path that we skip entirely.
+
+The Calibre plugin vendors third-party packages (ebooklib, simplemma,
+wordfreq) under ``calibre-plugin/vendor/``; their suppression comments are
+not ours to police.
+"""
+
+
 def _iter_python_files():
     for top in SCAN_DIRS:
         root = REPO_ROOT / top
         if not root.exists():
             continue
-        yield from root.rglob("*.py")
+        for path in root.rglob("*.py"):
+            if SKIP_DIR_PARTS.isdisjoint(path.parts):
+                yield path
 
 
 def test_no_suppression_comments():
@@ -49,7 +60,6 @@ def test_no_suppression_comments():
                 for label, pattern in FORBIDDEN_PATTERNS.items():
                     if pattern.search(line):
                         offenders.append((rel, lineno, label))
-    assert not offenders, (
-        "Forbidden suppression comments found (see AGENTS.md):\n"
-        + "\n".join(f"  {path}:{line} — {kind}" for path, line, kind in offenders)
+    assert not offenders, "Forbidden suppression comments found (see AGENTS.md):\n" + "\n".join(
+        f"  {path}:{line} — {kind}" for path, line, kind in offenders
     )

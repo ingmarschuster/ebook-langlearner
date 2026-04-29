@@ -11,11 +11,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 
+from .cefr import level_class, level_for_zipf
 from .dictionaries.base import Dictionary, LookupKey, rank_candidates
 from .frequency import zipf
 from .lemma_frequency import lemma_zipf
 from .lemmatize import lemmatize
-from .render import AnnotationFormat, render_translations
+from .render import (
+    DEFAULT_ACTIVE_LEVEL,
+    DEFAULT_ANNOTATION_GREY_PCT,
+    DEFAULT_RUBY_FONT_PCT,
+    AnnotationFormat,
+    render_translations,
+)
 from .tokenize import (
     SENTENCE_END,
     Token,
@@ -35,19 +42,33 @@ class AnnotationConfig:
         source_lang: ISO 639-1 code of the text's language.
         target_lang: ISO 639-1 code of the translation language.
         cutoff: Zipf frequency cutoff; words strictly below this are
-            annotated. Typical useful range is 2.5 to 4.0.
+            considered for annotation. Typical useful range is 2.5 to 5.5.
+            Independent of ``active_level``: lowering the cutoff narrows
+            *which* words get tagged at all, while ``active_level`` only
+            controls which already-tagged annotations are visible.
         fmt: HTML annotation format. Defaults to ``RUBY``.
         max_translations: Maximum candidates per annotated word. Defaults to 2
             (rendered as ``a/b``).
         min_word_length: Words shorter than this are skipped (never annotated).
+        ruby_font_pct: Ruby translation font-size as a percentage of the
+            base word's font-size. Only consulted when ``fmt`` is
+            :attr:`AnnotationFormat.RUBY`. See
+            :func:`render.build_annotation_css`.
+        active_level: CEFR level whose annotations are visible by default in
+            the produced EPUB. Words below the cutoff are tagged regardless;
+            this only affects the initial CSS gate. Switch later with the
+            ``set-level`` CLI command.
     """
 
     source_lang: str
     target_lang: str
     cutoff: float
-    fmt: AnnotationFormat = AnnotationFormat.RUBY
+    fmt: AnnotationFormat = AnnotationFormat.PARENTHETICAL
     max_translations: int = 2
     min_word_length: int = 2
+    ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT
+    annotation_grey_pct: float = DEFAULT_ANNOTATION_GREY_PCT
+    active_level: str = DEFAULT_ACTIVE_LEVEL
 
 
 class Annotator:
@@ -69,6 +90,11 @@ class Annotator:
         """
         self._dict = dictionary
         self._cfg = config
+
+    @property
+    def config(self) -> AnnotationConfig:
+        """Return the immutable :class:`AnnotationConfig` this annotator was built with."""
+        return self._cfg
 
     def annotate_text(self, text: str) -> str:
         """Annotate a plain-text string.
@@ -103,12 +129,16 @@ class Annotator:
         returns the escaped original word whenever that cascade declines to
         produce a translation list.
         """
-        translations = self._translations_for(token, prev_nonword)
-        if translations is None:
+        result = self._translations_for(token, prev_nonword)
+        if result is None:
             return escape(token.text)
-        return render_translations(token.text, translations, self._cfg.fmt)
+        translations, lemma_z = result
+        level = level_for_zipf(self._cfg.source_lang, lemma_z)
+        if level is None:
+            return escape(token.text)
+        return render_translations(token.text, translations, self._cfg.fmt, level_class(level))
 
-    def _translations_for(self, token: Token, prev_nonword: str) -> list[str] | None:
+    def _translations_for(self, token: Token, prev_nonword: str) -> tuple[list[str], float] | None:
         """Run the rare-word filter cascade and return ranked translations.
 
         Cascade (short-circuiting, cheapest first): length → numeric →
@@ -121,8 +151,9 @@ class Annotator:
         infinitive form alone only scores ~5.0.
 
         Returns:
-            The ranked translation list to render, or ``None`` if the token
-            should be left untouched.
+            ``(translations, lemma_zipf)`` for words that pass the cascade,
+            or ``None`` when the token should be left untouched. The lemma
+            Zipf is returned so the caller can map it to a CEFR class.
         """
         word = token.text
         if is_too_short(word, min_length=self._cfg.min_word_length):
@@ -135,7 +166,8 @@ class Annotator:
         if zipf(surface, self._cfg.source_lang) >= self._cfg.cutoff:
             return None
         lemma = lemmatize(surface, self._cfg.source_lang)
-        if lemma_zipf(lemma, self._cfg.source_lang) >= self._cfg.cutoff:
+        lemma_z = lemma_zipf(lemma, self._cfg.source_lang)
+        if lemma_z >= self._cfg.cutoff:
             return None
         key = LookupKey(
             lemma=lemma,
@@ -147,7 +179,7 @@ class Annotator:
             target_lang=self._cfg.target_lang,
             limit=self._cfg.max_translations,
         )
-        return translations or None
+        return (translations, lemma_z) if translations else None
 
 
 def _is_sentence_start(prev_nonword: str) -> bool:
