@@ -201,6 +201,9 @@ def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: 
         active_level: CEFR level whose annotations are visible by default;
             baked into the stylesheet's rewrite-target block.
     """
+    existing = _find_stylesheet_item(book)
+    if existing is not None:
+        _remove_item(book, existing)
     style = epub.EpubItem(
         uid=STYLESHEET_ITEM_ID,
         file_name=STYLESHEET_FILENAME,
