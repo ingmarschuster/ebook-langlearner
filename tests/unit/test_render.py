@@ -28,8 +28,19 @@ def test_ruby_format_wraps_word_and_translations():
 def test_parenthetical_format_uses_split_spans():
     html = render_translations("chat", ["cat"], AnnotationFormat.PARENTHETICAL, "ell-level-a2")
     assert html == (
-        '<span class="ell-annot ell-level-a2">chat<span class="ell-trans"> (cat)</span></span>'
+        '<span class="ell-annot ell-level-a2">chat<span class="ell-trans"> [cat]</span></span>'
     )
+
+
+def test_parenthetical_uses_comma_separator():
+    html = render_translations("chat", ["cat", "feline"], AnnotationFormat.PARENTHETICAL, "ell-level-a2")
+    assert " [cat, feline]" in html
+
+
+def test_parenthetical_uses_square_brackets():
+    html = render_translations("chat", ["cat"], AnnotationFormat.PARENTHETICAL, "ell-level-a2")
+    assert "[cat]" in html
+    assert "(cat)" not in html
 
 
 def test_empty_translations_return_escaped_word():
@@ -41,7 +52,7 @@ def test_html_special_chars_are_escaped():
     html = render_translations("<b>", ["&amp"], AnnotationFormat.PARENTHETICAL, "ell-level-c1")
     assert html == (
         '<span class="ell-annot ell-level-c1">&lt;b&gt;'
-        '<span class="ell-trans"> (&amp;amp)</span></span>'
+        '<span class="ell-trans"> [&amp;amp]</span></span>'
     )
 
 
@@ -152,6 +163,13 @@ def test_annotation_css_hides_ell_trans_by_default_in_static_rules():
     static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
     assert ".ell-trans" in static
     assert "display: none" in static
+
+
+def test_annotation_css_font_pct_applies_to_parenthetical_trans():
+    css = build_annotation_css(ruby_font_pct=75.0)
+    # Both rt and .ell-trans should share the same font-size setting.
+    static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
+    assert static.count("font-size: 75%") == 2
 
 
 def test_annotation_css_translation_italic_not_word_bold():

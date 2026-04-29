@@ -60,18 +60,18 @@ def render_translations(
     """
     if not translations:
         return escape(word)
-    joined = "/".join(escape(t) for t in translations)
     safe_word = escape(word)
     if fmt is AnnotationFormat.RUBY:
+        joined = "/".join(escape(t) for t in translations)
         return (
             f'<ruby class="ell-annot {level_cls}">{safe_word}'
             f'<rt class="ell-rt">{joined}</rt></ruby>'
         )
-    # Parenthetical splits into outer + inner span so the parens can be
-    # toggled or stripped via CSS without losing the base word.
+    # Parenthetical: square brackets, comma-space separator.
+    joined = ", ".join(escape(t) for t in translations)
     return (
         f'<span class="ell-annot {level_cls}">{safe_word}'
-        f'<span class="ell-trans"> ({joined})</span></span>'
+        f'<span class="ell-trans"> [{joined}]</span></span>'
     )
 
 
@@ -160,6 +160,7 @@ def build_annotation_css(
         "ruby.ell-annot { ruby-align: center; }\n"
         f"ruby.ell-annot rt.ell-rt {{ font-size: {pct_value}; "
         "opacity: 0.75; line-height: 1; display: none; }\n"
-        "span.ell-annot .ell-trans { font-style: italic; display: none; }\n"
+        f"span.ell-annot .ell-trans {{ font-size: {pct_value}; "
+        "font-style: italic; display: none; }\n"
     )
     return base + build_active_level_block(active_level) + "\n"
