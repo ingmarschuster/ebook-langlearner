@@ -188,9 +188,9 @@ def test_annotation_grey_pct_100_is_black():
     assert "hsl(0, 0%, 0%)" in css
 
 
-def test_annotation_grey_pct_50_is_midgrey():
-    css = build_annotation_css(annotation_grey_pct=50.0)
-    assert "hsl(0, 0%, 50%)" in css
+def test_annotation_grey_pct_30_is_light():
+    css = build_annotation_css(annotation_grey_pct=30.0)
+    assert "hsl(0, 0%, 70%)" in css
 
 
 def test_annotation_grey_pct_applies_to_both_rt_and_trans():

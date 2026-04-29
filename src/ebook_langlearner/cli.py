@@ -131,7 +131,7 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
     "--format",
     "fmt",
     type=click.Choice(["ruby", "parenthetical"]),
-    default="ruby",
+    default="parenthetical",
     show_default=True,
 )
 @click.option(
@@ -164,7 +164,7 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
 )
 @click.option(
     "--annotation-grey-pct",
-    type=click.FloatRange(min=50.0, max=100.0),
+    type=click.FloatRange(min=30.0, max=100.0),
     default=DEFAULT_ANNOTATION_GREY_PCT,
     show_default=True,
     help=(

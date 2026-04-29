@@ -72,6 +72,8 @@ def annotate_epub(
         Counters summarizing the run.
     """
     book = epub.read_epub(str(source))
+    if _find_stylesheet_item(book) is not None:
+        _strip_annotations_in_place(book)
     stats = PipelineStats()
 
     for item in list(book.get_items_of_type(ITEM_DOCUMENT)):
@@ -177,6 +179,16 @@ def _replace_with_html(text_node: NavigableString, html_fragment: str) -> None:
 
 STYLESHEET_FILENAME = "ell-annotations.css"
 STYLESHEET_ITEM_ID = "ell-annotations-css"
+
+
+def _strip_annotations_in_place(book: epub.EpubBook) -> None:
+    """Strip every ell-annot element and the stylesheet item from ``book`` in memory."""
+    for item in list(book.get_items_of_type(ITEM_DOCUMENT)):
+        new_html, _ = _strip_document(item.get_content().decode("utf-8"))
+        item.set_content(new_html.encode("utf-8"))
+    style = _find_stylesheet_item(book)
+    if style is not None:
+        _remove_item(book, style)
 
 
 def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: str, annotation_grey_pct: float) -> None:

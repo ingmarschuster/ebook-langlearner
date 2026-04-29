@@ -36,7 +36,7 @@ PREFS = JSONConfig("plugins/ebook_langlearner")
 PREFS.defaults["source"] = "fr"
 PREFS.defaults["target"] = "de"
 PREFS.defaults["level"] = "b2"
-PREFS.defaults["format"] = "ruby"
+PREFS.defaults["format"] = "parenthetical"
 
 _SUPPORTED_LANGUAGES: tuple[tuple[str, str], ...] = (
     ("de", "German"),

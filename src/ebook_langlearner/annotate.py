@@ -63,7 +63,7 @@ class AnnotationConfig:
     source_lang: str
     target_lang: str
     cutoff: float
-    fmt: AnnotationFormat = AnnotationFormat.RUBY
+    fmt: AnnotationFormat = AnnotationFormat.PARENTHETICAL
     max_translations: int = 2
     min_word_length: int = 2
     ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT

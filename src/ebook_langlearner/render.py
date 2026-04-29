@@ -76,7 +76,7 @@ def render_translations(
 
 
 DEFAULT_RUBY_FONT_PCT = 90.0
-DEFAULT_ANNOTATION_GREY_PCT = 80.0
+DEFAULT_ANNOTATION_GREY_PCT = 50.0
 """Default annotation text darkness as a percentage (100 = black, 0 = white).
 
 80% gives a slightly grey translation that is readable but visually subordinate

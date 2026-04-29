@@ -34,7 +34,7 @@ DEFAULT_RUBY_FONT_PCT = 90.0
 this module stays import-safe before the vendored ``ell`` package is on
 ``sys.path``."""
 
-DEFAULT_ANNOTATION_GREY_PCT = 80.0
+DEFAULT_ANNOTATION_GREY_PCT = 50.0
 """Default annotation text darkness percent (100=black, 0=white). Min 50."""
 
 
@@ -63,8 +63,8 @@ class AnnotationDialog(QDialog):
         self.level.setCurrentText("B2")
 
         self.fmt = QComboBox()
-        self.fmt.addItem("Ruby (above the word)", "ruby")
         self.fmt.addItem("Parenthetical (inline)", "parenthetical")
+        self.fmt.addItem("Ruby (above the word)", "ruby")
 
         self.ruby_font_pct = QDoubleSpinBox()
         self.ruby_font_pct.setRange(50.0, 120.0)
@@ -77,7 +77,7 @@ class AnnotationDialog(QDialog):
         )
 
         self.annotation_grey_pct = QDoubleSpinBox()
-        self.annotation_grey_pct.setRange(50.0, 100.0)
+        self.annotation_grey_pct.setRange(30.0, 100.0)
         self.annotation_grey_pct.setDecimals(0)
         self.annotation_grey_pct.setSingleStep(5.0)
         self.annotation_grey_pct.setSuffix(" %")

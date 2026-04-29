@@ -269,12 +269,15 @@ def build_icon() -> None:
     if not svg.is_file():
         print("  icon: icon.svg missing, skipping")
         return
+    if out.is_file():
+        print(f"  icon: {out.relative_to(REPO)} already exists, skipping render")
+        return
     _ensure_installed("cairosvg")
     try:
         cairosvg = importlib.import_module("cairosvg")
-    except OSError as exc:
+    except (OSError, ImportError) as exc:
         hint = _libcairo_install_hint()
-        msg = f"cairosvg cannot load the native libcairo library: {exc}\nInstall it with: {hint}"
+        msg = f"cairosvg cannot load: {exc}\nInstall native deps with: {hint}"
         raise SystemExit(msg) from exc
     cairosvg.svg2png(url=str(svg), write_to=str(out), output_width=48, output_height=48)
     print(f"  icon: rendered {out.relative_to(REPO)}")
