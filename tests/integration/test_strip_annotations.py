@@ -118,6 +118,62 @@ def test_cli_strip_annotations(annotated_epub: Path, tmp_path: Path):
     assert "ell-annot" not in _zip_xhtml(out)
 
 
+def test_strip_restores_original_stylesheets(
+    minimal_epub: Path,
+    permissive_fr_dict: Dictionary,
+    tmp_path: Path,
+):
+    """Regression: annotate_epub lost original <link> stylesheets because ebooklib
+    drops item.links on read_epub. strip_annotations must restore them so the
+    stripped EPUB's <head> matches the original rather than being link-free."""
+    import zipfile as _zf
+
+    def _css_links(path):
+        with _zf.ZipFile(path) as zf:
+            hrefs = set()
+            for name in zf.namelist():
+                if not name.endswith((".xhtml", ".html", ".htm")):
+                    continue
+                content = zf.read(name).decode("utf-8")
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(content, "lxml-xml")
+                for tag in soup.find_all("link"):
+                    rel = tag.get("rel", "")
+                    if isinstance(rel, list):
+                        rel = " ".join(rel)
+                    if "stylesheet" in rel.lower():
+                        hrefs.add(tag.get("href", ""))
+        return hrefs
+
+    original_links = _css_links(minimal_epub)
+    assert original_links, "sample EPUB must have at least one stylesheet link"
+
+    annotator = Annotator(
+        permissive_fr_dict,
+        AnnotationConfig(source_lang="fr", target_lang="en", cutoff=4.5, active_level="B2"),
+    )
+    annotated = tmp_path / "annotated.epub"
+    annotate_epub(minimal_epub, annotated, annotator)
+
+    # Annotated EPUB must preserve the original stylesheets alongside ours.
+    annotated_links = _css_links(annotated)
+    assert original_links.issubset(annotated_links), (
+        f"original CSS links lost during annotation: {original_links - annotated_links}"
+    )
+    assert any(STYLESHEET_FILENAME in h for h in annotated_links)
+
+    # Stripped EPUB must restore original stylesheets and drop ours.
+    stripped = tmp_path / "stripped.epub"
+    strip_annotations(annotated, stripped)
+    stripped_links = _css_links(stripped)
+    assert original_links.issubset(stripped_links), (
+        f"original CSS links not restored after strip: {original_links - stripped_links}"
+    )
+    assert not any(STYLESHEET_FILENAME in h for h in stripped_links), (
+        "ell-annotations.css must be gone after strip"
+    )
+
+
 def test_cli_strip_default_output_path(annotated_epub: Path):
     result = CliRunner().invoke(main, ["strip-annotations", str(annotated_epub)])
     assert result.exit_code == 0, result.output

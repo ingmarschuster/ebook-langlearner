@@ -9,6 +9,7 @@ is added so ruby annotations render consistently across readers.
 
 from __future__ import annotations
 
+import zipfile
 from dataclasses import dataclass
 from html import escape as html_escape
 from pathlib import PurePosixPath
@@ -71,6 +72,7 @@ def annotate_epub(
     Returns:
         Counters summarizing the run.
     """
+    original_head_links = _read_head_links_from_zip(source)
     book = epub.read_epub(str(source))
     if _find_stylesheet_item(book) is not None:
         _strip_annotations_in_place(book)
@@ -78,6 +80,7 @@ def annotate_epub(
 
     for item in list(book.get_items_of_type(ITEM_DOCUMENT)):
         original_html = item.get_content().decode("utf-8")
+        _apply_head_links(item, original_head_links)
         annotated_html = _annotate_document(original_html, annotator, stats)
         item.set_content(annotated_html.encode("utf-8"))
         _register_stylesheet_link(item)
@@ -113,6 +116,64 @@ def _annotate_document(html: str, annotator: Annotator, stats: PipelineStats) ->
         _replace_with_html(text_node, annotated_fragment)
         stats.text_nodes_processed += 1
     return str(soup)
+
+
+def _read_head_links_from_zip(source: "Path | str") -> dict[str, list[dict]]:
+    """Extract ``<link rel="stylesheet">`` data from every content document in ``source``.
+
+    ebooklib strips ``<head>`` when loading items — ``item.get_content()``
+    returns ``<head/>`` with no children, so the only way to recover the
+    original stylesheet hrefs is to read the raw zip bytes before ebooklib
+    discards them.
+
+    Returns a dict keyed by *basename* of each content file (matching
+    ``item.file_name`` after ebooklib strips the container-directory prefix).
+    """
+    result: dict[str, list[dict]] = {}
+    with zipfile.ZipFile(str(source)) as zf:
+        for zip_path in zf.namelist():
+            if not zip_path.endswith((".xhtml", ".html", ".htm")):
+                continue
+            raw = zf.read(zip_path).decode("utf-8", errors="replace")
+            soup = BeautifulSoup(raw, "lxml-xml")
+            links: list[dict] = []
+            for tag in soup.find_all("link"):
+                rel = tag.get("rel", "")
+                if isinstance(rel, list):
+                    rel = " ".join(rel)
+                if "stylesheet" not in rel.lower():
+                    continue
+                href = tag.get("href", "")
+                if href:
+                    links.append({"href": href, "rel": "stylesheet", "type": tag.get("type", "text/css")})
+            if links:
+                basename = zip_path.rsplit("/", 1)[-1]
+                result[basename] = links
+    return result
+
+
+def _apply_head_links(
+    item: epub.EpubHtml,
+    links_by_basename: dict[str, list[dict]],
+    *,
+    exclude_suffix: str | None = None,
+) -> None:
+    """Add stylesheet links from ``links_by_basename`` to ``item.links``.
+
+    Matches ``item.file_name``'s basename against ``links_by_basename``.
+    ``exclude_suffix``: skip any link whose href ends with this string (used
+    during strip to omit the ``ell-annotations.css`` reference).
+    """
+    basename = item.file_name.rsplit("/", 1)[-1]
+    seen = {lnk.get("href") for lnk in item.links}
+    for link_data in links_by_basename.get(basename, []):
+        href = link_data["href"]
+        if exclude_suffix and href.endswith(exclude_suffix):
+            continue
+        if href in seen:
+            continue
+        item.add_link(**link_data)
+        seen.add(href)
 
 
 def _register_stylesheet_link(item: epub.EpubHtml) -> None:
@@ -315,15 +376,16 @@ def strip_annotations(
     Returns:
         Counters summarizing what was removed.
     """
+    annotated_head_links = _read_head_links_from_zip(source)
     book = epub.read_epub(str(source))
     stats = StripStats()
     for item in list(book.get_items_of_type(ITEM_DOCUMENT)):
         original_html = item.get_content().decode("utf-8")
+        _apply_head_links(item, annotated_head_links, exclude_suffix=STYLESHEET_FILENAME)
         new_html, removed = _strip_document(original_html)
         if removed:
             item.set_content(new_html.encode("utf-8"))
             stats.annotations_removed += removed
-        _unregister_stylesheet_link(item)
         stats.documents_processed += 1
 
     style = _find_stylesheet_item(book)
@@ -356,11 +418,6 @@ def _strip_document(html: str) -> tuple[str, int]:
         tag.unwrap()
         removed += 1
     return str(soup), removed
-
-
-def _unregister_stylesheet_link(item: epub.EpubHtml) -> None:
-    """Remove every link to :data:`STYLESHEET_FILENAME` from ``item.links``."""
-    item.links = [link for link in item.links if link.get("href") != STYLESHEET_FILENAME]
 
 
 def _remove_item(book: epub.EpubBook, target: epub.EpubItem) -> None:
