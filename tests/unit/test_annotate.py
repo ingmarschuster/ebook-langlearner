@@ -44,10 +44,10 @@ def test_top_two_translations_rendered_joined(static_dict_factory):
     assert "twilight/dusk" in out
 
 
-def test_parenthetical_format_uses_parens(static_dict_factory):
+def test_parenthetical_format_uses_brackets(static_dict_factory):
     ann = _annotator(static_dict_factory, fmt=AnnotationFormat.PARENTHETICAL)
     out = ann.annotate_text("L'aubépine.")
-    assert "(hawthorn)" in out
+    assert "[hawthorn]" in out
     assert "<ruby" not in out
 
 

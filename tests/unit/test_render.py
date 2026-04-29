@@ -7,6 +7,7 @@ import pytest
 from ebook_langlearner.render import (
     BEGIN_LEVEL_MARKER_PREFIX,
     DEFAULT_ACTIVE_LEVEL,
+    DEFAULT_ANNOTATION_GREY_PCT,
     DEFAULT_RUBY_FONT_PCT,
     END_LEVEL_MARKER,
     AnnotationFormat,
@@ -170,6 +171,32 @@ def test_annotation_css_font_pct_applies_to_parenthetical_trans():
     # Both rt and .ell-trans should share the same font-size setting.
     static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
     assert static.count("font-size: 75%") == 2
+
+
+def test_default_annotation_grey_pct_is_valid():
+    assert 50.0 <= DEFAULT_ANNOTATION_GREY_PCT <= 100.0
+
+
+def test_annotation_grey_pct_default_emits_hsl_color():
+    css = build_annotation_css()
+    lightness = 100.0 - DEFAULT_ANNOTATION_GREY_PCT
+    assert f"hsl(0, 0%, {lightness:g}%)" in css
+
+
+def test_annotation_grey_pct_100_is_black():
+    css = build_annotation_css(annotation_grey_pct=100.0)
+    assert "hsl(0, 0%, 0%)" in css
+
+
+def test_annotation_grey_pct_50_is_midgrey():
+    css = build_annotation_css(annotation_grey_pct=50.0)
+    assert "hsl(0, 0%, 50%)" in css
+
+
+def test_annotation_grey_pct_applies_to_both_rt_and_trans():
+    css = build_annotation_css(annotation_grey_pct=70.0)
+    static = css.split(BEGIN_LEVEL_MARKER_PREFIX)[0]
+    assert static.count("hsl(0, 0%, 30%)") == 2
 
 
 def test_annotation_css_translation_italic_not_word_bold():

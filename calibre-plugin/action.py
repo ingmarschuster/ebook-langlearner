@@ -406,6 +406,7 @@ def _annotate_job(
             cutoff=cutoff,
             fmt=AnnotationFormat(config["format"]),
             ruby_font_pct=float(config["ruby_font_pct"]),
+            annotation_grey_pct=float(config.get("annotation_grey_pct", 80.0)),
             active_level=active_level,
         ),
     )

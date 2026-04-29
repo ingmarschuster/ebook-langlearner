@@ -34,6 +34,9 @@ DEFAULT_RUBY_FONT_PCT = 90.0
 this module stays import-safe before the vendored ``ell`` package is on
 ``sys.path``."""
 
+DEFAULT_ANNOTATION_GREY_PCT = 80.0
+"""Default annotation text darkness percent (100=black, 0=white). Min 50."""
+
 
 class AnnotationDialog(QDialog):
     """Modal dialog collecting annotation parameters."""
@@ -73,11 +76,22 @@ class AnnotationDialog(QDialog):
             "Ruby translation font-size as a percentage of the base word's font-size."
         )
 
+        self.annotation_grey_pct = QDoubleSpinBox()
+        self.annotation_grey_pct.setRange(50.0, 100.0)
+        self.annotation_grey_pct.setDecimals(0)
+        self.annotation_grey_pct.setSingleStep(5.0)
+        self.annotation_grey_pct.setSuffix(" %")
+        self.annotation_grey_pct.setValue(DEFAULT_ANNOTATION_GREY_PCT)
+        self.annotation_grey_pct.setToolTip(
+            "Annotation text darkness: 100% = black, 50% = mid-grey."
+        )
+
         form.addRow("From:", self.source)
         form.addRow("To:", self.target)
         form.addRow("CEFR level:", self.level)
         form.addRow("Format:", self.fmt)
         form.addRow("Ruby font size:", self.ruby_font_pct)
+        form.addRow("Annotation grey %:", self.annotation_grey_pct)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -95,6 +109,7 @@ class AnnotationDialog(QDialog):
             "level": self.level.currentData(),
             "format": self.fmt.currentData(),
             "ruby_font_pct": float(self.ruby_font_pct.value()),
+            "annotation_grey_pct": float(self.annotation_grey_pct.value()),
         }
 
 

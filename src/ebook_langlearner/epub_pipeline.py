@@ -85,6 +85,7 @@ def annotate_epub(
         book,
         ruby_font_pct=annotator.config.ruby_font_pct,
         active_level=annotator.config.active_level,
+        annotation_grey_pct=annotator.config.annotation_grey_pct,
     )
     epub.write_epub(str(destination), book)
     return stats
@@ -178,7 +179,7 @@ STYLESHEET_FILENAME = "ell-annotations.css"
 STYLESHEET_ITEM_ID = "ell-annotations-css"
 
 
-def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: str) -> None:
+def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: str, annotation_grey_pct: float) -> None:
     """Attach the shared annotation stylesheet item to the EPUB.
 
     Args:
@@ -192,9 +193,11 @@ def _add_stylesheet(book: epub.EpubBook, *, ruby_font_pct: float, active_level: 
         uid=STYLESHEET_ITEM_ID,
         file_name=STYLESHEET_FILENAME,
         media_type="text/css",
-        content=build_annotation_css(ruby_font_pct=ruby_font_pct, active_level=active_level).encode(
-            "utf-8"
-        ),
+        content=build_annotation_css(
+            ruby_font_pct=ruby_font_pct,
+            active_level=active_level,
+            annotation_grey_pct=annotation_grey_pct,
+        ).encode("utf-8"),
     )
     book.add_item(style)
 

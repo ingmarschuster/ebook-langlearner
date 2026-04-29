@@ -76,6 +76,13 @@ def render_translations(
 
 
 DEFAULT_RUBY_FONT_PCT = 90.0
+DEFAULT_ANNOTATION_GREY_PCT = 80.0
+"""Default annotation text darkness as a percentage (100 = black, 0 = white).
+
+80% gives a slightly grey translation that is readable but visually subordinate
+to the base word. Minimum allowed value is 50% (mid-grey). Converted to a CSS
+HSL lightness via ``lightness = 100 − grey_pct``.
+"""
 """Default ruby translation font-size, as a percentage of the base word's font-size.
 
 90% renders the rt slightly smaller than the surrounding word — visible
@@ -131,6 +138,7 @@ def build_annotation_css(
     *,
     ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT,
     active_level: str = DEFAULT_ACTIVE_LEVEL,
+    annotation_grey_pct: float = DEFAULT_ANNOTATION_GREY_PCT,
 ) -> str:
     """Build the annotation stylesheet, sized for ruby and gated by CEFR level.
 
@@ -155,12 +163,14 @@ def build_annotation_css(
     lines apart.
     """
     pct_value = f"{ruby_font_pct:g}%"
+    lightness = 100.0 - annotation_grey_pct
+    color_value = f"hsl(0, 0%, {lightness:g}%)"
     base = (
         "body { line-height: 1.7; }\n"
         "ruby.ell-annot { ruby-align: center; }\n"
         f"ruby.ell-annot rt.ell-rt {{ font-size: {pct_value}; "
-        "opacity: 0.75; line-height: 1; display: none; }\n"
+        f"color: {color_value}; line-height: 1; display: none; }}\n"
         f"span.ell-annot .ell-trans {{ font-size: {pct_value}; "
-        "font-style: italic; display: none; }\n"
+        f"color: {color_value}; font-style: italic; display: none; }}\n"
     )
     return base + build_active_level_block(active_level) + "\n"

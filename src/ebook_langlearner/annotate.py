@@ -18,6 +18,7 @@ from .lemma_frequency import lemma_zipf
 from .lemmatize import lemmatize
 from .render import (
     DEFAULT_ACTIVE_LEVEL,
+    DEFAULT_ANNOTATION_GREY_PCT,
     DEFAULT_RUBY_FONT_PCT,
     AnnotationFormat,
     render_translations,
@@ -66,6 +67,7 @@ class AnnotationConfig:
     max_translations: int = 2
     min_word_length: int = 2
     ruby_font_pct: float = DEFAULT_RUBY_FONT_PCT
+    annotation_grey_pct: float = DEFAULT_ANNOTATION_GREY_PCT
     active_level: str = DEFAULT_ACTIVE_LEVEL
 
 

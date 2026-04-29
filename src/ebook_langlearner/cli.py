@@ -52,7 +52,7 @@ from .epub_pipeline import (
     strip_annotations,
 )
 from .languages import CORE_LANGUAGES, require_supported
-from .render import DEFAULT_RUBY_FONT_PCT, AnnotationFormat
+from .render import DEFAULT_ANNOTATION_GREY_PCT, DEFAULT_RUBY_FONT_PCT, AnnotationFormat
 
 if TYPE_CHECKING:
     from .dictionaries.base import Dictionary
@@ -163,6 +163,16 @@ def cmd_build_wiktionary_index(source: str, jsonl: Path) -> None:
     ),
 )
 @click.option(
+    "--annotation-grey-pct",
+    type=click.FloatRange(min=50.0, max=100.0),
+    default=DEFAULT_ANNOTATION_GREY_PCT,
+    show_default=True,
+    help=(
+        "Annotation text darkness as a percentage (100 = black, 50 = mid-grey). "
+        "Lower values make translations lighter so they feel less intrusive."
+    ),
+)
+@click.option(
     "--output",
     "-o",
     type=click.Path(path_type=Path),
@@ -179,6 +189,7 @@ def cmd_annotate(
     *,
     no_download: bool,
     ruby_font_pct: float,
+    annotation_grey_pct: float,
     output: Path | None,
 ) -> None:
     """Annotate an EPUB using the selected dictionary backends.
@@ -243,6 +254,7 @@ def cmd_annotate(
             cutoff=cutoff,
             fmt=AnnotationFormat(fmt),
             ruby_font_pct=ruby_font_pct,
+            annotation_grey_pct=annotation_grey_pct,
             active_level=active_level,
         ),
     )
