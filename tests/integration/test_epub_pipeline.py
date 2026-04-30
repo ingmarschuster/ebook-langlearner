@@ -83,6 +83,30 @@ def test_stylesheet_is_added_and_linked(
     )
 
 
+def test_annotate_epub_twice_produces_no_duplicate_manifest_entry(
+    minimal_epub: Path,
+    annotator_fr_en: Annotator,
+    tmp_path: Path,
+):
+    """Regression: ebooklib would add the stylesheet twice if annotate_epub was
+    called on an already-annotated book, producing a duplicate OPF manifest
+    entry that Kindle's validator rejects."""
+    first = tmp_path / "first.epub"
+    second = tmp_path / "second.epub"
+    annotate_epub(minimal_epub, first, annotator_fr_en)
+    annotate_epub(first, second, annotator_fr_en)
+
+    with zipfile.ZipFile(second) as zf:
+        opf_names = [n for n in zf.namelist() if n.endswith(".opf")]
+        assert opf_names, "OPF file must be present"
+        opf = zf.read(opf_names[0]).decode("utf-8")
+
+    css_entries = [line for line in opf.splitlines() if STYLESHEET_FILENAME in line]
+    assert len(css_entries) == 1, (
+        f"stylesheet must appear exactly once in OPF manifest, got {len(css_entries)}: {css_entries}"
+    )
+
+
 def test_custom_ruby_font_pct_propagates_to_stylesheet(
     minimal_epub: Path,
     permissive_fr_dict: Dictionary,
