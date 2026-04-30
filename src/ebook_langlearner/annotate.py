@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from html import escape
 
 from .cefr import level_class, level_for_zipf
-from .dictionaries.base import Dictionary, LookupKey, rank_candidates
+from .dictionaries.base import Dictionary, LookupKey, select_candidates
 from .frequency import zipf
 from .lemma_frequency import lemma_zipf
 from .lemmatize import lemmatize
@@ -174,9 +174,8 @@ class Annotator:
             source_lang=self._cfg.source_lang,
             target_lang=self._cfg.target_lang,
         )
-        translations = rank_candidates(
+        translations = select_candidates(
             self._dict.candidates(key),
-            target_lang=self._cfg.target_lang,
             limit=self._cfg.max_translations,
         )
         return (translations, lemma_z) if translations else None

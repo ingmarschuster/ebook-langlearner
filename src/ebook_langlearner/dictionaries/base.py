@@ -1,16 +1,14 @@
-"""Dictionary interface and candidate ranking.
+"""Dictionary interface and candidate selection.
 
 All backends implement :class:`Dictionary` and return *raw* candidate
-translations for a lookup key; ranking (by target-language frequency) is done
-uniformly by :func:`rank_candidates` so results are consistent across backends.
+translations for a lookup key; selection (first N unique candidates in
+dictionary order) is done uniformly by :func:`select_candidates`.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-
-from ebook_langlearner.frequency import zipf
 
 
 @dataclass(frozen=True)
@@ -31,9 +29,9 @@ class LookupKey:
 class Dictionary(ABC):
     """A translation lookup backend.
 
-    Backends should return raw candidate translations in whatever order the
-    source provides. Deduplication, casing preservation, and frequency-based
-    ranking are applied uniformly by :func:`rank_candidates`.
+    Backends should return raw candidate translations in the order the source
+    provides them. Deduplication and truncation are applied uniformly by
+    :func:`select_candidates`.
     """
 
     @abstractmethod
@@ -49,49 +47,29 @@ class Dictionary(ABC):
         raise NotImplementedError
 
 
-def rank_candidates(candidates: list[str], target_lang: str, limit: int = 2) -> list[str]:
-    """Rank and truncate candidate translations.
+def select_candidates(candidates: list[str], limit: int = 2) -> list[str]:
+    """Select and truncate candidate translations in dictionary order.
 
-    Candidates are sorted by descending Zipf frequency in the target language,
-    with ties broken by length (shorter first) and then alphabetically. This
-    surfaces the most common, most-concise gloss first. Duplicates (case-
-    insensitive) are collapsed, keeping the first casing observed.
+    Returns the first ``limit`` unique (case-insensitive) non-empty candidates
+    in the order the dictionary provided them, preserving original casing.
 
     Args:
         candidates: Raw translations from one or more dictionary backends.
-        target_lang: Language code used to score candidates via :func:`zipf`.
         limit: Maximum number of results to return.
 
     Returns:
-        Up to ``limit`` translations in best-first order.
+        Up to ``limit`` translations in dictionary order.
     """
-    seen: dict[str, tuple[float, int, str]] = {}
+    seen: set[str] = set()
+    result: list[str] = []
     for raw in candidates:
         cand = raw.strip()
         if not cand:
             continue
         key = cand.lower()
-        score = (-zipf(cand, target_lang), len(cand), cand.lower())
-        if key not in seen or score < seen[key]:
-            seen[key] = score
-    ordered = sorted(seen.items(), key=lambda item: item[1])
-    return [original for original, _score in _preserve_original_case(ordered, candidates)][:limit]
-
-
-def _preserve_original_case(
-    ordered_lower: list[tuple[str, tuple[float, int, str]]],
-    originals: list[str],
-) -> list[tuple[str, tuple[float, int, str]]]:
-    """Restore the first observed casing for each ranked candidate.
-
-    Ranking operates on lowercased keys; this helper ensures the returned
-    strings keep the casing of the original input (important for nouns in
-    languages where casing is semantic, e.g. German nouns).
-    """
-    first_case: dict[str, str] = {}
-    for raw in originals:
-        cand = raw.strip()
-        if not cand:
-            continue
-        first_case.setdefault(cand.lower(), cand)
-    return [(first_case.get(key, key), score) for key, score in ordered_lower]
+        if key not in seen:
+            seen.add(key)
+            result.append(cand)
+            if len(result) == limit:
+                break
+    return result
